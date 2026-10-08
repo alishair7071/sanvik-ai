@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling>=1.26,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sanvik-agent"
+version = "0.1.0"
+description = "Local Python runtime for Sanvik AI"
+requires-python = ">=3.12"
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sanvik_agent"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
