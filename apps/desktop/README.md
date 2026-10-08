@@ -1,9 +1,26 @@
 # Desktop application
 
-`src/` is reserved for the React/TypeScript interface. `src/bridge/` will hold
-the frontend-facing transport interface so UI code does not depend on the
-Python IPC protocol.
+`src/` contains the minimal React/TypeScript communication test UI.
+`src/bridge/` owns frontend calls to narrow Tauri commands. `src-tauri/`
+owns the Python process lifecycle and line-delimited JSON transport.
 
-`src-tauri/` is reserved for the Tauri shell. It will own the Python process
-lifecycle and mediate communication between the webview and local runtime.
-Tauri manifests, a frontend build, and the process bridge are not present yet.
+## Development
+
+From the repository root, create the Python environment:
+
+```powershell
+python -m venv packages/agent/.venv
+```
+
+From `apps/desktop`:
+
+```powershell
+npm.cmd install
+npm.cmd run tauri dev
+```
+
+Rust, the MSVC C++ build tools, and WebView2 are required to launch Tauri on
+Windows. The Rust bridge runs the repository's Python environment at
+`packages/agent/.venv/Scripts/python.exe`; set `SANVIK_PYTHON` to another
+Python 3.12 executable if needed. Python imports the local `src/` package,
+so an editable install is not required for this communication test.

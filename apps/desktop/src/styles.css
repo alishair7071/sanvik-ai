@@ -1,0 +1,35 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #202533;
+  background: #f6f7fa;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  max-width: 560px;
+  margin: 64px auto;
+  padding: 24px;
+}
+
+form {
+  display: grid;
+  gap: 12px;
+}
+
+input,
+button {
+  font: inherit;
+  padding: 10px 12px;
+}
+
+button {
+  width: fit-content;
+  cursor: pointer;
+}
+
+section {
+  margin-top: 32px;
+}
