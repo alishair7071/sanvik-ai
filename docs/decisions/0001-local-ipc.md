@@ -1,6 +1,6 @@
 # 0001: Local desktop-to-agent communication
 
-Status: Proposed for V1
+Status: Day 1 request/response implemented; event streaming deferred
 
 ## Decision
 
@@ -30,4 +30,4 @@ An authenticated loopback HTTP/WebSocket service is reasonable if multiple
 local clients or independent agent lifecycle become requirements. It adds port
 management and a local network attack surface, so it is not the V1 default.
 
-No transport or sidecar is implemented by this decision record.
+The Day 1 transport is implemented in the Tauri shell and Python runtime. Production bundling remains out of scope.

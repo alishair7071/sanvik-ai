@@ -3,12 +3,13 @@
 ## Desktop (`apps/desktop`)
 
 - `src/`: React/TypeScript views and the frontend bridge interface.
-- `src-tauri/`: Tauri shell, lifecycle, permissions, and a future process bridge
+- `src-tauri/`: Tauri shell, lifecycle, permissions, and the local process bridge
   to the local Python runtime.
 
 ## Agent (`packages/agent`)
 
-- `agent/`: task lifecycle. `engine/` owns each run; `graph/` is reserved for`n  LangGraph orchestration; `execution/` applies validated actions;
+- `agent/`: task lifecycle. `engine/` owns each run; `graph/` is reserved for
+  LangGraph orchestration; `execution/` applies validated actions;
   `state/`, `planning/`, `observation/`, `verification/`, and `recovery/` separate
   the stages of a task.
 - `capabilities/`: controlled, typed operations offered to the agent.
@@ -20,7 +21,7 @@
 - `models/`: interchangeable LLM provider interfaces and implementations.
 - `storage/`: local persistence, including SQLite when introduced.
 - `ipc/`: versioned messages exchanged with the Tauri process bridge.
-- `tests/unit/` and `tests/integration/`: future pytest suites.
+- `tests/unit/` and `tests/integration/`: pytest protocol and subprocess checks.
 
 ## Shared project material
 
@@ -28,5 +29,5 @@
 - `docs/architecture/`: architectural boundaries and explanations.
 - `docs/decisions/`: decisions with their tradeoffs and revision history.
 
-These directories indicate ownership only. No agent, graph, automation, model,
-transport, or database implementation exists yet.
+Day 1 implements only the local request/response transport. The agent, graph,
+automation, model integration, and database remain unimplemented.
