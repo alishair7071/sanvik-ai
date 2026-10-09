@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
-from typing import Any, TextIO
+from typing import Any, Callable, TextIO
+
+from sanvik_agent.agent.graph.planning import plan_task
+from sanvik_agent.agent.planning.plan import Plan
+from sanvik_agent.models.groq import GroqProvider
+from sanvik_agent.models.provider import PlanningError
 
 PROTOCOL_VERSION = 1
+logger = logging.getLogger(__name__)
 
 
 def _error(request_id: str | None, code: str, message: str) -> dict[str, Any]:
@@ -19,7 +26,9 @@ def _error(request_id: str | None, code: str, message: str) -> dict[str, Any]:
     }
 
 
-def handle_line(line: str) -> tuple[dict[str, Any], bool]:
+def handle_line(
+    line: str, planner: Callable[[str], Plan] | None = None
+) -> tuple[dict[str, Any], bool]:
     """Return a response and whether the runtime should stop after sending it."""
     try:
         request = json.loads(line)
@@ -44,14 +53,28 @@ def handle_line(line: str) -> tuple[dict[str, Any], bool]:
 
     operation = payload.get("operation")
     if operation == "ping":
-        message = "Sanvik Python runtime is running"
+        result = {"message": "Sanvik Python runtime is running"}
     elif operation == "echo":
         user_message = payload.get("message")
         if not isinstance(user_message, str) or not user_message.strip():
             return _error(request_id, "invalid_message", "Message must not be empty"), False
-        message = f"Sanvik Python received: {user_message}"
+        result = {"message": f"Sanvik Python received: {user_message}"}
+    elif operation == "plan_task":
+        task = payload.get("message")
+        if not isinstance(task, str) or not task.strip():
+            return _error(request_id, "empty_task", "Task must not be empty"), False
+        try:
+            plan = planner(task) if planner is not None else plan_task(task, GroqProvider())
+            if not isinstance(plan, Plan):
+                raise TypeError("Planner returned no Plan")
+            result = {"plan": plan.model_dump(mode="json")}
+        except PlanningError as exc:
+            return _error(request_id, exc.code, exc.public_message), False
+        except Exception:
+            logger.error("planning_failed_unexpected")
+            return _error(request_id, "internal_error", "Planning failed unexpectedly"), False
     elif operation == "shutdown":
-        message = "Sanvik Python runtime is shutting down"
+        result = {"message": "Sanvik Python runtime is shutting down"}
     else:
         return _error(request_id, "unknown_operation", "Unknown operation"), False
 
@@ -60,13 +83,17 @@ def handle_line(line: str) -> tuple[dict[str, Any], bool]:
         "type": "response",
         "id": request_id,
         "success": True,
-        "payload": {"message": message},
+        "payload": result,
     }, operation == "shutdown"
 
 
-def serve(input_stream: TextIO, output_stream: TextIO) -> None:
+def serve(
+    input_stream: TextIO,
+    output_stream: TextIO,
+    planner: Callable[[str], Plan] | None = None,
+) -> None:
     for line in input_stream:
-        response, should_stop = handle_line(line)
+        response, should_stop = handle_line(line, planner)
         output_stream.write(json.dumps(response, ensure_ascii=False) + "\n")
         output_stream.flush()
         if should_stop:

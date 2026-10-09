@@ -1,11 +1,13 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { pingRuntime, sendMessage } from "./bridge/runtime";
+import { pingRuntime, planTask, type Plan } from "./bridge/runtime";
 
 export default function App() {
-  const [message, setMessage] = useState("");
-  const [response, setResponse] = useState("");
+  const [task, setTask] = useState("");
+  const [submittedTask, setSubmittedTask] = useState("");
+  const [plan, setPlan] = useState<Plan | null>(null);
+  const [error, setError] = useState("");
   const [status, setStatus] = useState("Connecting to Python...");
-  const [sending, setSending] = useState(false);
+  const [planning, setPlanning] = useState(false);
 
   useEffect(() => {
     void pingRuntime()
@@ -15,18 +17,20 @@ export default function App() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!message.trim() || sending) return;
+    if (!task.trim() || planning) return;
 
-    setSending(true);
-    setResponse("");
+    setPlanning(true);
+    setPlan(null);
+    setError("");
+    setSubmittedTask(task.trim());
     try {
-      const reply = await sendMessage(message);
-      setResponse(reply);
-      setStatus("Python connected");
+      const result = await planTask(task);
+      setPlan(result);
+      setStatus("Plan ready");
     } catch (error: unknown) {
-      setResponse(`Request failed: ${String(error)}`);
+      setError(`Planning failed: ${String(error)}`);
     } finally {
-      setSending(false);
+      setPlanning(false);
     }
   }
 
@@ -35,21 +39,42 @@ export default function App() {
       <h1>Sanvik AI</h1>
       <p role="status">{status}</p>
       <form onSubmit={(event) => void submit(event)}>
-        <label htmlFor="message">Message</label>
+        <label htmlFor="task">Task</label>
         <input
-          id="message"
-          value={message}
-          onChange={(event) => setMessage(event.target.value)}
-          placeholder="Hello Sanvik"
+          id="task"
+          value={task}
+          onChange={(event) => setTask(event.target.value)}
+          placeholder="Open Notepad and type Hello"
           autoComplete="off"
         />
-        <button type="submit" disabled={sending || !message.trim()}>
-          {sending ? "Sending..." : "Send"}
+        <button type="submit" disabled={planning || !task.trim()}>
+          {planning ? "Planning..." : "Create plan"}
         </button>
       </form>
       <section aria-live="polite">
-        <h2>Python response</h2>
-        <p>{response || "No response yet."}</p>
+        <h2>Plan</h2>
+        {error && <p role="alert">{error}</p>}
+        {planning && <p>Creating a plan...</p>}
+        {plan && (
+          <>
+            <p><strong>Task:</strong> {submittedTask}</p>
+            <p><strong>Goal:</strong> {plan.goal}</p>
+            <ol>
+              {plan.steps.map((step, index) => (
+                <li key={index}>
+                  <strong>{step.action}</strong>
+                  {Object.keys(step.parameters).length > 0 && (
+                    <span> ({Object.entries(step.parameters).map(([key, value]) => `${key}: ${value}`).join(", ")})</span>
+                  )}
+                  <div>Expected: {step.expected_result}</div>
+                  <div>Risk: {step.risk_level}</div>
+                </li>
+              ))}
+            </ol>
+            <p>Plan only. No actions have been performed.</p>
+          </>
+        )}
+        {!planning && !plan && !error && <p>No plan yet.</p>}
       </section>
     </main>
   );
