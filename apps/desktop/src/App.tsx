@@ -1,14 +1,15 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { pingRuntime, planTask } from "./bridge/runtime";
-import type { Plan } from "./bridge/types";
+import { pingRuntime, planTask, runTask } from "./bridge/runtime";
+import type { Execution, Plan } from "./bridge/types";
 
 export default function App() {
   const [task, setTask] = useState("");
   const [submittedTask, setSubmittedTask] = useState("");
   const [plan, setPlan] = useState<Plan | null>(null);
+  const [execution, setExecution] = useState<Execution | null>(null);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("Connecting to Python...");
-  const [planning, setPlanning] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     void pingRuntime()
@@ -16,30 +17,45 @@ export default function App() {
       .catch((error: unknown) => setStatus(`Python unavailable: ${String(error)}`));
   }, []);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!task.trim() || planning) return;
+  async function start(run: boolean) {
+    if (!task.trim() || busy) return;
 
-    setPlanning(true);
+    setBusy(true);
     setPlan(null);
+    setExecution(null);
     setError("");
     setSubmittedTask(task.trim());
+    setStatus(run ? "Planning and running Notepad task..." : "Creating plan...");
+
     try {
-      const result = await planTask(task);
-      setPlan(result);
-      setStatus("Plan ready");
+      if (run) {
+        const result = await runTask(task);
+        setPlan(result.plan);
+        setExecution(result.execution);
+        setStatus(result.execution.completed ? "Task completed" : "Task stopped");
+      } else {
+        const result = await planTask(task);
+        setPlan(result);
+        setStatus("Plan ready");
+      }
     } catch (error: unknown) {
-      setError(`Planning failed: ${String(error)}`);
+      setError(`Task failed: ${String(error)}`);
+      setStatus("Task failed");
     } finally {
-      setPlanning(false);
+      setBusy(false);
     }
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void start(false);
   }
 
   return (
     <main>
       <h1>Sanvik AI</h1>
       <p role="status">{status}</p>
-      <form onSubmit={(event) => void submit(event)}>
+      <form onSubmit={submit}>
         <label htmlFor="task">Task</label>
         <input
           id="task"
@@ -48,14 +64,19 @@ export default function App() {
           placeholder="Open Notepad and type Hello"
           autoComplete="off"
         />
-        <button type="submit" disabled={planning || !task.trim()}>
-          {planning ? "Planning..." : "Create plan"}
-        </button>
+        <div className="actions">
+          <button type="submit" disabled={busy || !task.trim()}>
+            Create plan
+          </button>
+          <button type="button" disabled={busy || !task.trim()} onClick={() => void start(true)}>
+            Run Notepad task
+          </button>
+        </div>
       </form>
       <section aria-live="polite">
-        <h2>Plan</h2>
+        <h2>Result</h2>
         {error && <p role="alert">{error}</p>}
-        {planning && <p>Creating a plan...</p>}
+        {busy && <p>Please wait...</p>}
         {plan && (
           <>
             <p><strong>Task:</strong> {submittedTask}</p>
@@ -69,13 +90,17 @@ export default function App() {
                   )}
                   <div>Expected: {step.expected_result}</div>
                   <div>Risk: {step.risk_level}</div>
+                  {execution?.steps[index] && (
+                    <div>{execution.steps[index].success ? "Verified" : "Failed"}: {execution.steps[index].message}</div>
+                  )}
                 </li>
               ))}
             </ol>
-            <p>Plan only. No actions have been performed.</p>
+            {!execution && <p>Plan only. No actions have been performed.</p>}
+            {execution && <p>{execution.completed ? "All steps verified." : "Execution stopped before all steps completed."}</p>}
           </>
         )}
-        {!planning && !plan && !error && <p>No plan yet.</p>}
+        {!busy && !plan && !error && <p>No task yet.</p>}
       </section>
     </main>
   );

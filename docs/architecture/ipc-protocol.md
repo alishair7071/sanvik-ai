@@ -39,3 +39,13 @@ closing stdin also ends the Python loop.
 
 The plan is data returned to the UI. This protocol performs no computer actions.
 See [the request flow](request-flow.md) for how the layers use it.
+## First execution operation
+
+`run_task` uses the same request envelope and `message` field as `plan_task`.
+Python plans the task, checks that every step is supported, then opens Notepad,
+sets its editor text, and verifies the result. The response payload contains
+both `plan` and `execution`. `execution.completed` is false if a step failed;
+`execution.steps` has an `action`, `success`, and `message` for each attempted
+step. An unsupported plan returns `unsupported_plan` before any desktop action.
+The response is sent after execution; this version does not stream progress.
+Rust allows up to 90 seconds for `run_task`.

@@ -12,3 +12,18 @@ export interface Plan {
   goal: string;
   steps: PlanStep[];
 }
+export interface StepResult {
+  action: string;
+  success: boolean;
+  message: string;
+}
+
+export interface Execution {
+  completed: boolean;
+  steps: StepResult[];
+}
+
+export interface RunResult {
+  plan: Plan;
+  execution: Execution;
+}

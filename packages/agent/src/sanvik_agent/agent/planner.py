@@ -13,7 +13,10 @@ SYSTEM_PROMPT = (
     "have been performed. Each action must be a lowercase snake_case identifier "
     "such as launch_app, type_text, or verify_result; never put prose in action. "
     "Use simple scalar parameters, observable expected results, and honest risk "
-    "levels. Include a final verification step."
+    "levels. Include a final verification step. For a Notepad request, use "
+    "launch_app with {app: notepad}, then type_text with {text: the exact "
+    "requested text} if needed, then verify_result with empty parameters. "
+    "Do not add other steps for a Notepad request."
 )
 
 

@@ -16,6 +16,7 @@ use crate::python_process_manager::PythonProcess;
 const PROTOCOL_VERSION: u8 = 1;
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
 const PLAN_TIMEOUT: Duration = Duration::from_secs(65);
+const RUN_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(Serialize)]
 struct Request<'a> {
@@ -48,8 +49,21 @@ struct Response {
 pub struct ResponsePayload {
     pub message: Option<String>,
     pub plan: Option<Plan>,
+    pub execution: Option<Execution>,
 }
 
+#[derive(Deserialize, Serialize)]
+pub struct Execution {
+    pub completed: bool,
+    pub steps: Vec<StepResult>,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct StepResult {
+    pub action: String,
+    pub success: bool,
+    pub message: String,
+}
 #[derive(Deserialize, Serialize)]
 pub struct Plan {
     pub goal: String,
@@ -90,7 +104,9 @@ impl PythonProcess {
         self.write_line(&encoded)?;
 
         // Wait for one response from Python's stdout, with more time for planning.
-        let timeout = if operation == "plan_task" {
+        let timeout = if operation == "run_task" {
+            RUN_TIMEOUT
+        } else if operation == "plan_task" {
             PLAN_TIMEOUT
         } else {
             RESPONSE_TIMEOUT

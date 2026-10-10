@@ -3,7 +3,8 @@ mod python_process_manager;
 
 use std::sync::Arc;
 
-use python_ipc_bridge::{Plan, RuntimeState};
+use python_ipc_bridge::{Execution, Plan, RuntimeState};
+use serde::Serialize;
 use tauri::Manager;
 
 #[tauri::command]
@@ -59,6 +60,33 @@ async fn plan_task(
     .map_err(|error| format!("Python bridge task failed: {error}"))?
 }
 
+#[derive(Serialize)]
+struct RunResult {
+    plan: Plan,
+    execution: Execution,
+}
+
+#[tauri::command]
+async fn run_task(
+    task: String,
+    state: tauri::State<'_, Arc<RuntimeState>>,
+) -> Result<RunResult, String> {
+    if task.trim().is_empty() {
+        return Err("Task must not be empty".into());
+    }
+
+    let runtime = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let response = runtime.exchange("run_task", Some(&task))?;
+        let plan = response.plan.ok_or("Python response has no plan")?;
+        let execution = response
+            .execution
+            .ok_or("Python response has no execution result")?;
+        Ok(RunResult { plan, execution })
+    })
+    .await
+    .map_err(|error| format!("Python bridge task failed: {error}"))?
+}
 pub fn run() {
     let app = tauri::Builder::default()
         .setup(|app| {
@@ -77,7 +105,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ping_runtime,
             send_message,
-            plan_task
+            plan_task,
+            run_task
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Sanvik desktop");

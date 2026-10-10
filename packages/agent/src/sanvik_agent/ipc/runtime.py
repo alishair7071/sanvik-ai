@@ -7,6 +7,7 @@ from typing import Callable, TextIO
 
 from sanvik_agent.agent.plan import Plan
 from sanvik_agent.agent.planner import plan_task
+from sanvik_agent.execution.executor import UnsupportedPlan
 from sanvik_agent.llm.provider import PlanningError
 
 PROTOCOL_VERSION = 1
@@ -78,6 +79,22 @@ def handle_line(
         except Exception:
             logger.error("planning_failed_unexpected")
             return _error(request_id, "internal_error", "Planning failed unexpectedly"), False
+    elif operation == "run_task":
+        task = payload.get("message")
+        if not isinstance(task, str) or not task.strip():
+            return _error(request_id, "empty_task", "Task must not be empty"), False
+
+        try:
+            from sanvik_agent.agent.workflow import run_task
+
+            result = run_task(task)
+        except UnsupportedPlan as exc:
+            return _error(request_id, "unsupported_plan", str(exc)), False
+        except PlanningError as exc:
+            return _error(request_id, exc.code, exc.public_message), False
+        except Exception:
+            logger.error("execution_failed_unexpected")
+            return _error(request_id, "internal_error", "Task failed unexpectedly"), False
     elif operation == "shutdown":
         result = {"message": "Sanvik Python runtime is shutting down"}
         should_stop = True
