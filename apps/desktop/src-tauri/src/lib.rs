@@ -1,8 +1,9 @@
-mod python_runtime;
+mod python_ipc_bridge;
+mod python_process_manager;
 
 use std::sync::Arc;
 
-use python_runtime::{Plan, RuntimeState};
+use python_ipc_bridge::{Plan, RuntimeState};
 use tauri::Manager;
 
 #[tauri::command]
@@ -61,8 +62,10 @@ async fn plan_task(
 pub fn run() {
     let app = tauri::Builder::default()
         .setup(|app| {
+            // Share one Python runtime across all Tauri commands.
             let runtime = Arc::new(RuntimeState::new());
             app.manage(Arc::clone(&runtime));
+            // Start Python in the background so opening the window is not blocked.
             std::thread::spawn(move || {
                 if let Err(error) = runtime.start() {
                     eprintln!("Sanvik Python startup: {error}");
@@ -70,6 +73,7 @@ pub fn run() {
             });
             Ok(())
         })
+        // Register commands callable by the React/TypeScript frontend.
         .invoke_handler(tauri::generate_handler![
             ping_runtime,
             send_message,
@@ -79,6 +83,7 @@ pub fn run() {
         .expect("failed to build Sanvik desktop");
 
     app.run(|app_handle, event| {
+        // Stop the local Python child when the desktop application exits.
         if matches!(event, tauri::RunEvent::Exit) {
             app_handle.state::<Arc<RuntimeState>>().shutdown();
         }

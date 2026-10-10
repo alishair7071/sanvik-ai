@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { pingRuntime, planTask, type Plan } from "./bridge/runtime";
+import { pingRuntime, planTask } from "./bridge/runtime";
+import type { Plan } from "./bridge/types";
 
 export default function App() {
   const [task, setTask] = useState("");

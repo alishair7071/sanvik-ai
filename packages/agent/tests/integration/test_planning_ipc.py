@@ -1,11 +1,12 @@
+import io
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
-from sanvik_agent.agent.planning.plan import Plan
-from sanvik_agent.ipc.runtime import handle_line
+from sanvik_agent.agent.plan import Plan
+from sanvik_agent.ipc.runtime import handle_line, serve
 
 
 def request(message: str) -> str:
@@ -52,6 +53,7 @@ def test_empty_task_and_unexpected_error_are_controlled() -> None:
     assert response["error"]["code"] == "internal_error"
     assert "internal detail" not in response["error"]["message"]
 
+
 def test_subprocess_returns_controlled_missing_key(monkeypatch) -> None:
     monkeypatch.setenv("GROQ_API_KEY", "")
     package_root = Path(__file__).resolve().parents[2]
@@ -71,3 +73,21 @@ def test_subprocess_returns_controlled_missing_key(monkeypatch) -> None:
     response = json.loads(result.stdout)
     assert response["id"] == "planning-1"
     assert response["error"]["code"] == "missing_api_key"
+
+def test_serve_round_trip_with_injected_planner() -> None:
+    plan = Plan.model_validate({
+        "goal": "Open Notepad",
+        "steps": [{
+            "action": "launch_app",
+            "parameters": {"app": "Notepad"},
+            "expected_result": "Notepad is open",
+            "risk_level": "READ_ONLY",
+        }],
+    })
+    output = io.StringIO()
+    serve(io.StringIO(request("Open Notepad") + "\n"), output, planner=lambda task: plan)
+
+    reply = json.loads(output.getvalue())
+    assert reply["id"] == "planning-1"
+    assert reply["success"] is True
+    assert reply["payload"]["plan"] == plan.model_dump(mode="json")

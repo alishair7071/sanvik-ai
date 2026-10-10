@@ -1,18 +1,17 @@
+//! JSON request/response bridge between Tauri commands and the local Python process.
+//! python_process_manager.rs owns interpreter startup, pipes, and process cleanup.
+
 use std::{
-    env,
-    io::{BufRead, BufReader, Write},
-    path::PathBuf,
-    process::{Child, ChildStdin, Command, Stdio},
     sync::{
         atomic::{AtomicU64, Ordering},
-        mpsc::{self, Receiver},
         Mutex,
     },
-    thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use serde::{Deserialize, Serialize};
+
+use crate::python_process_manager::PythonProcess;
 
 const PROTOCOL_VERSION: u8 = 1;
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -71,85 +70,14 @@ struct ResponseError {
     message: String,
 }
 
-struct PythonProcess {
-    child: Child,
-    stdin: ChildStdin,
-    stdout_lines: Receiver<Result<String, String>>,
-}
-
 impl PythonProcess {
-    fn start() -> Result<Self, String> {
-        let package_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../packages/agent")
-            .canonicalize()
-            .map_err(|error| format!("Cannot locate Python package: {error}"))?;
-        let python = match env::var_os("SANVIK_PYTHON") {
-            Some(path) => PathBuf::from(path),
-            None => package_root.join(".venv/Scripts/python.exe"),
-        };
-        if !python.is_file() {
-            return Err(format!(
-                "Python executable not found at {}. Create packages/agent/.venv or set SANVIK_PYTHON.",
-                python.display()
-            ));
-        }
-
-        let mut command = Command::new(&python);
-        command
-            .args(["-u", "-m", "sanvik_agent.ipc.runtime"])
-            .current_dir(&package_root)
-            .env("PYTHONPATH", package_root.join("src"))
-            .env("PYTHONIOENCODING", "utf-8")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-        }
-
-        let mut child = command
-            .spawn()
-            .map_err(|error| format!("Failed to start Python: {error}"))?;
-        let stdin = child.stdin.take().ok_or("Python stdin was not piped")?;
-        let stdout = child.stdout.take().ok_or("Python stdout was not piped")?;
-        let stderr = child.stderr.take().ok_or("Python stderr was not piped")?;
-
-        let (sender, stdout_lines) = mpsc::channel();
-        thread::spawn(move || {
-            for line in BufReader::new(stdout).lines() {
-                let item = line.map_err(|error| format!("Cannot read Python stdout: {error}"));
-                if sender.send(item).is_err() {
-                    break;
-                }
-            }
-        });
-        thread::spawn(move || {
-            for line in BufReader::new(stderr).lines() {
-                match line {
-                    Ok(text) => eprintln!("[sanvik-python] {text}"),
-                    Err(error) => {
-                        eprintln!("[sanvik-python] stderr read failed: {error}");
-                        break;
-                    }
-                }
-            }
-        });
-
-        Ok(Self {
-            child,
-            stdin,
-            stdout_lines,
-        })
-    }
-
     fn request(
         &mut self,
         id: &str,
         operation: &str,
         message: Option<&str>,
     ) -> Result<ResponsePayload, String> {
+        // Encode a versioned, correlated request for the Python IPC handler.
         let request = Request {
             version: PROTOCOL_VERSION,
             kind: "request",
@@ -158,26 +86,17 @@ impl PythonProcess {
         };
         let encoded = serde_json::to_string(&request)
             .map_err(|error| format!("Cannot encode request: {error}"))?;
-        writeln!(self.stdin, "{encoded}")
-            .and_then(|_| self.stdin.flush())
-            .map_err(|error| format!("Cannot write to Python: {error}"))?;
+        // Send the encoded request to Python through its stdin pipe.
+        self.write_line(&encoded)?;
 
-        let line = self
-            .stdout_lines
-            .recv_timeout(if operation == "plan_task" {
-                PLAN_TIMEOUT
-            } else {
-                RESPONSE_TIMEOUT
-            })
-            .map_err(|error| match error {
-                mpsc::RecvTimeoutError::Timeout => "Python response timed out".to_string(),
-                mpsc::RecvTimeoutError::Disconnected => {
-                    let status = self.child.try_wait().ok().flatten();
-                    format!("Python exited before responding (status: {status:?})")
-                }
-            })?
-            .map_err(|error| format!("Python output failed: {error}"))?;
-
+        // Wait for one response from Python's stdout, with more time for planning.
+        let timeout = if operation == "plan_task" {
+            PLAN_TIMEOUT
+        } else {
+            RESPONSE_TIMEOUT
+        };
+        let line = self.read_line(timeout)?;
+        // Parse and validate the response before returning any result to a Tauri command.
         let response: Response = serde_json::from_str(&line)
             .map_err(|error| format!("Invalid JSON from Python: {error}"))?;
         if response.version != PROTOCOL_VERSION || response.kind != "response" {
@@ -198,23 +117,9 @@ impl PythonProcess {
     }
 
     fn shutdown(&mut self, id: &str) {
+        // Ask Python to exit through the same protocol, then allow a short grace period.
         let _ = self.request(id, "shutdown", None);
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while Instant::now() < deadline {
-            if self.child.try_wait().ok().flatten().is_some() {
-                return;
-            }
-            thread::sleep(Duration::from_millis(20));
-        }
-    }
-}
-
-impl Drop for PythonProcess {
-    fn drop(&mut self) {
-        if self.child.try_wait().ok().flatten().is_none() {
-            let _ = self.child.kill();
-            let _ = self.child.wait();
-        }
+        self.wait_for_exit();
     }
 }
 
@@ -239,6 +144,7 @@ impl RuntimeState {
         )
     }
 
+    // Start once on app startup; exchange() also starts lazily if startup failed.
     pub fn start(&self) -> Result<(), String> {
         let mut guard = self
             .process
@@ -250,6 +156,7 @@ impl RuntimeState {
         Ok(())
     }
 
+    // Serialize access to the single Python process and reset it after any protocol error.
     pub fn exchange(
         &self,
         operation: &str,
@@ -280,5 +187,40 @@ impl RuntimeState {
             }
             *guard = None;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RuntimeState;
+
+    #[test]
+    fn python_ipc_bridge_handles_requests_errors_and_shutdown() {
+        let runtime = RuntimeState::new();
+
+        let ping = runtime.exchange("ping", None).expect("ping should succeed");
+        assert_eq!(
+            ping.message.as_deref(),
+            Some("Sanvik Python runtime is running")
+        );
+
+        let echo = runtime
+            .exchange("echo", Some("Hello"))
+            .expect("echo should succeed");
+        assert_eq!(
+            echo.message.as_deref(),
+            Some("Sanvik Python received: Hello")
+        );
+
+        let error = runtime
+            .exchange("unknown", None)
+            .err()
+            .expect("unknown operation should fail");
+        assert!(error.contains("unknown_operation"));
+
+        // An error discards the process; the next request starts a new one.
+        assert!(runtime.exchange("ping", None).is_ok());
+        runtime.shutdown();
+        assert!(runtime.process.lock().unwrap().is_none());
     }
 }

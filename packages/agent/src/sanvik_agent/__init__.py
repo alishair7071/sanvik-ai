@@ -1,1 +1,1 @@
-"""Sanvik AI local runtime package."""
+"""Sanvik's local Python agent."""

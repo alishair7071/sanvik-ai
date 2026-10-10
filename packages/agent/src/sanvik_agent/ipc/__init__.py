@@ -1,1 +1,1 @@
-"""Local desktop-to-runtime protocol."""
+"""JSON-line communication with the desktop shell."""

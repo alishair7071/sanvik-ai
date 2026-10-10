@@ -1,10 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
-from sanvik_agent.agent.graph.planning import EmptyTask, build_planning_graph, plan_task
-from sanvik_agent.agent.planning.plan import Plan
-from sanvik_agent.agent.state.task import initial_state
-from sanvik_agent.models.provider import InvalidModelResponse, ProviderFailure
+from sanvik_agent.agent.plan import Plan
+from sanvik_agent.agent.planner import EmptyTask, plan_task, workflow
 
 
 VALID_PLAN = {
@@ -26,27 +24,22 @@ VALID_PLAN = {
 }
 
 
-class FakeProvider:
-    def __init__(self, plan: Plan | None = None, error: Exception | None = None) -> None:
-        self.plan = plan
+class FakeChatModel:
+    def __init__(self, result=None, error=None) -> None:
+        self.result = result
         self.error = error
-        self.tasks: list[str] = []
+        self.messages = None
+        self.schema = None
 
-    def create_plan(self, task: str) -> Plan:
-        self.tasks.append(task)
+    def with_structured_output(self, schema):
+        self.schema = schema
+        return self
+
+    def invoke(self, messages):
+        self.messages = messages
         if self.error:
             raise self.error
-        assert self.plan is not None
-        return self.plan
-
-
-def test_initial_state() -> None:
-    assert initial_state("Open Notepad") == {
-        "task": "Open Notepad",
-        "plan": None,
-        "status": "received",
-        "error": None,
-    }
+        return self.result
 
 
 def test_valid_plan_parses() -> None:
@@ -70,27 +63,40 @@ def test_invalid_plan_rejected(change: dict) -> None:
         Plan.model_validate({**VALID_PLAN, **change})
 
 
-def test_graph_runs_with_fake_provider() -> None:
-    provider = FakeProvider(Plan.model_validate(VALID_PLAN))
-    graph = build_planning_graph(provider)
-    result = graph.invoke(initial_state("  Open Notepad and type Hello  "))
-    assert result["status"] == "planned"
-    assert result["plan"].goal == VALID_PLAN["goal"]
-    assert provider.tasks == ["Open Notepad and type Hello"]
+def test_graph_calls_model_and_validates_plan(monkeypatch) -> None:
+    model = FakeChatModel(VALID_PLAN)
+    monkeypatch.setattr("sanvik_agent.agent.planner.get_chat_model", lambda: model)
+    result = workflow.invoke({"task": "Open Notepad"})
+    assert isinstance(result["plan"], Plan)
+    assert model.schema is Plan
+    assert model.messages[0][0] == "system"
+    assert model.messages[1] == ("human", "Open Notepad")
 
 
-def test_empty_task_is_rejected_before_provider_call() -> None:
-    provider = FakeProvider(Plan.model_validate(VALID_PLAN))
+def test_task_is_trimmed_and_default_model_is_selected(monkeypatch) -> None:
+    model = FakeChatModel(VALID_PLAN)
+    monkeypatch.setattr("sanvik_agent.agent.planner.get_chat_model", lambda: model)
+    assert plan_task("  Open Notepad  ").goal == VALID_PLAN["goal"]
+    assert model.messages[1] == ("human", "Open Notepad")
+
+
+def test_empty_task_is_rejected_before_model_call(monkeypatch) -> None:
+    model = FakeChatModel(VALID_PLAN)
+    monkeypatch.setattr("sanvik_agent.agent.planner.get_chat_model", lambda: model)
     with pytest.raises(EmptyTask):
-        plan_task("  ", provider)
-    assert provider.tasks == []
+        plan_task("  ")
+    assert model.messages is None
 
 
-def test_provider_failure_propagates() -> None:
-    with pytest.raises(ProviderFailure):
-        plan_task("Open Notepad", FakeProvider(error=ProviderFailure()))
+def test_invalid_model_plan_is_rejected(monkeypatch) -> None:
+    model = FakeChatModel({"goal": "unsafe", "steps": []})
+    monkeypatch.setattr("sanvik_agent.agent.planner.get_chat_model", lambda: model)
+    with pytest.raises(ValidationError):
+        plan_task("Open Notepad")
 
 
-def test_provider_must_return_typed_plan() -> None:
-    with pytest.raises(InvalidModelResponse):
-        plan_task("Open Notepad", FakeProvider(plan={"goal": "unsafe"}))  # type: ignore[arg-type]
+def test_model_error_reaches_ipc_error_handler(monkeypatch) -> None:
+    model = FakeChatModel(error=RuntimeError("model failed"))
+    monkeypatch.setattr("sanvik_agent.agent.planner.get_chat_model", lambda: model)
+    with pytest.raises(RuntimeError):
+        plan_task("Open Notepad")

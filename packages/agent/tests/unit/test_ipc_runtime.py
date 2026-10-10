@@ -50,3 +50,19 @@ def test_boolean_version_is_rejected() -> None:
     response, stop = handle_line('{"version":true,"type":"request","id":"x","payload":{"operation":"ping"}}')
     assert response["error"]["code"] == "unsupported_version"
     assert not stop
+
+
+def test_invalid_requests_and_unknown_operation() -> None:
+    cases = [
+        ('[]', 'invalid_request', None),
+        ('{"version":1,"type":"request","id":"","payload":{"operation":"ping"}}', 'invalid_id', None),
+        ('{"version":2,"type":"request","id":"x","payload":{"operation":"ping"}}', 'unsupported_version', 'x'),
+        ('{"version":1,"type":"request","id":"x","payload":null}', 'invalid_payload', 'x'),
+        ('{"version":1,"type":"request","id":"x","payload":{"operation":"missing"}}', 'unknown_operation', 'x'),
+    ]
+    for line, expected_code, expected_id in cases:
+        response, stop = handle_line(line)
+        assert response["success"] is False
+        assert response["error"]["code"] == expected_code
+        assert response["id"] == expected_id
+        assert not stop

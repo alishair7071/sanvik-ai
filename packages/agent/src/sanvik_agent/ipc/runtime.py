@@ -1,22 +1,19 @@
 """Line-delimited JSON entry point for the local Tauri process bridge."""
 
-from __future__ import annotations
-
 import json
 import logging
 import sys
-from typing import Any, Callable, TextIO
+from typing import Callable, TextIO
 
-from sanvik_agent.agent.graph.planning import plan_task
-from sanvik_agent.agent.planning.plan import Plan
-from sanvik_agent.models.groq import GroqProvider
-from sanvik_agent.models.provider import PlanningError
+from sanvik_agent.agent.plan import Plan
+from sanvik_agent.agent.planner import plan_task
+from sanvik_agent.llm.provider import PlanningError
 
 PROTOCOL_VERSION = 1
 logger = logging.getLogger(__name__)
 
 
-def _error(request_id: str | None, code: str, message: str) -> dict[str, Any]:
+def _error(request_id: str | None, code: str, message: str) -> dict:
     return {
         "version": PROTOCOL_VERSION,
         "type": "response",
@@ -28,8 +25,8 @@ def _error(request_id: str | None, code: str, message: str) -> dict[str, Any]:
 
 def handle_line(
     line: str, planner: Callable[[str], Plan] | None = None
-) -> tuple[dict[str, Any], bool]:
-    """Return a response and whether the runtime should stop after sending it."""
+) -> tuple[dict, bool]:
+    """Process one JSON request and say whether the process should stop."""
     try:
         request = json.loads(line)
     except json.JSONDecodeError:
@@ -42,6 +39,7 @@ def handle_line(
     if not isinstance(request_id, str) or not request_id:
         return _error(None, "invalid_id", "Request ID must be a non-empty string"), False
 
+    # bool is a subclass of int in Python, so require exactly int here.
     if type(request.get("version")) is not int or request["version"] != PROTOCOL_VERSION:
         return _error(request_id, "unsupported_version", "Unsupported protocol version"), False
     if request.get("type") != "request":
@@ -52,6 +50,8 @@ def handle_line(
         return _error(request_id, "invalid_payload", "Payload must be an object"), False
 
     operation = payload.get("operation")
+    should_stop = False
+
     if operation == "ping":
         result = {"message": "Sanvik Python runtime is running"}
     elif operation == "echo":
@@ -63,8 +63,13 @@ def handle_line(
         task = payload.get("message")
         if not isinstance(task, str) or not task.strip():
             return _error(request_id, "empty_task", "Task must not be empty"), False
+
         try:
-            plan = planner(task) if planner is not None else plan_task(task, GroqProvider())
+            if planner is None:
+                plan = plan_task(task)
+            else:
+                plan = planner(task)
+
             if not isinstance(plan, Plan):
                 raise TypeError("Planner returned no Plan")
             result = {"plan": plan.model_dump(mode="json")}
@@ -75,16 +80,18 @@ def handle_line(
             return _error(request_id, "internal_error", "Planning failed unexpectedly"), False
     elif operation == "shutdown":
         result = {"message": "Sanvik Python runtime is shutting down"}
+        should_stop = True
     else:
         return _error(request_id, "unknown_operation", "Unknown operation"), False
 
-    return {
+    response = {
         "version": PROTOCOL_VERSION,
         "type": "response",
         "id": request_id,
         "success": True,
         "payload": result,
-    }, operation == "shutdown"
+    }
+    return response, should_stop
 
 
 def serve(
