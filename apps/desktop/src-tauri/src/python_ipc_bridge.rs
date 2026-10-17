@@ -15,7 +15,6 @@ use crate::python_process_manager::PythonProcess;
 
 const PROTOCOL_VERSION: u8 = 1;
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
-const PLAN_TIMEOUT: Duration = Duration::from_secs(65);
 const RUN_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(Serialize)]
@@ -103,11 +102,9 @@ impl PythonProcess {
         // Send the encoded request to Python through its stdin pipe.
         self.write_line(&encoded)?;
 
-        // Wait for one response from Python's stdout, with more time for planning.
+        // Wait for one response from Python's stdout, with more time for task execution.
         let timeout = if operation == "run_task" {
             RUN_TIMEOUT
-        } else if operation == "plan_task" {
-            PLAN_TIMEOUT
         } else {
             RESPONSE_TIMEOUT
         };

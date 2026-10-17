@@ -33,9 +33,3 @@ button {
 section {
   margin-top: 32px;
 }
-
-.actions {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}

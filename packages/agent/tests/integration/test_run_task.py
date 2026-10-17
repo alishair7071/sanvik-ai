@@ -8,14 +8,18 @@ from sanvik_agent.ipc import runtime
 def test_run_graph_plans_then_executes(monkeypatch) -> None:
     plan = Plan.model_validate({
         "goal": "Open Notepad",
-        "steps": [{"action": "launch_app", "parameters": {"app": "notepad"},
-                   "expected_result": "Notepad opens", "risk_level": "READ_ONLY"}],
+        "steps": [
+            {"action": "open_application", "parameters": {"application": "notepad"},
+             "expected_result": "Notepad opens", "risk_level": "REVERSIBLE"},
+            {"action": "verify_application", "parameters": {},
+             "expected_result": "Notepad is visible", "risk_level": "READ_ONLY"},
+        ],
     })
     calls = []
     monkeypatch.setattr(workflow, "plan_task", lambda task: calls.append(("plan", task)) or plan)
     monkeypatch.setattr(workflow, "execute_plan", lambda selected: calls.append(("execute", selected)) or {
         "completed": True,
-        "steps": [{"action": "launch_app", "success": True, "message": "Verified"}],
+        "steps": [{"action": "open_application", "success": True, "message": "Completed"}],
     })
 
     result = workflow.run_task("Open Notepad")

@@ -21,6 +21,7 @@ def create_plan_node(state: RunState) -> dict:
 
 
 def execute_plan_node(state: RunState) -> dict:
+    # Print the plan to stderr
     execution = execute_plan(state["plan"])
     return {"execution": execution}
 

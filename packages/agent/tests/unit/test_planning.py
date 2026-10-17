@@ -9,16 +9,22 @@ VALID_PLAN = {
     "goal": "Open Notepad and type Hello",
     "steps": [
         {
-            "action": "launch_app",
-            "parameters": {"app": "Notepad"},
+            "action": "open_application",
+            "parameters": {"application": "notepad"},
             "expected_result": "Notepad is open",
-            "risk_level": "READ_ONLY",
+            "risk_level": "REVERSIBLE",
         },
         {
             "action": "type_text",
             "parameters": {"text": "Hello"},
             "expected_result": "Hello appears in the editor",
             "risk_level": "REVERSIBLE",
+        },
+        {
+            "action": "verify_text",
+            "parameters": {"text": "Hello"},
+            "expected_result": "Notepad contains Hello",
+            "risk_level": "READ_ONLY",
         },
     ],
 }
@@ -44,7 +50,7 @@ class FakeChatModel:
 
 def test_valid_plan_parses() -> None:
     plan = Plan.model_validate(VALID_PLAN)
-    assert plan.steps[0].action == "launch_app"
+    assert plan.steps[0].action == "open_application"
     assert plan.steps[1].risk_level == "REVERSIBLE"
 
 
@@ -70,6 +76,9 @@ def test_graph_calls_model_and_validates_plan(monkeypatch) -> None:
     assert isinstance(result["plan"], Plan)
     assert model.schema is Plan
     assert model.messages[0][0] == "system"
+    assert "Notepad (notepad)" in model.messages[0][1]
+    assert "File Explorer (file_explorer)" in model.messages[0][1]
+    assert "Google Chrome (chrome)" in model.messages[0][1]
     assert model.messages[1] == ("human", "Open Notepad")
 
 

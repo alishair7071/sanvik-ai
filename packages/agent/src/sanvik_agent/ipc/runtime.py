@@ -1,19 +1,20 @@
-"""Line-delimited JSON entry point for the local Tauri process bridge."""
+﻿"""Line-delimited JSON entry point for the local Tauri process bridge."""
 
 import json
 import logging
 import sys
-from typing import Callable, TextIO
+from typing import TextIO
 
-from sanvik_agent.agent.plan import Plan
-from sanvik_agent.agent.planner import plan_task
-from sanvik_agent.execution.executor import UnsupportedPlan
+from sanvik_agent.execution.plan_validator import UnsupportedPlan
 from sanvik_agent.llm.provider import PlanningError
 
+# Protocol settings shared with the Rust bridge.
 PROTOCOL_VERSION = 1
 logger = logging.getLogger(__name__)
 
 
+
+# Build the standard error response sent back to Rust.
 def _error(request_id: str | None, code: str, message: str) -> dict:
     return {
         "version": PROTOCOL_VERSION,
@@ -24,10 +25,11 @@ def _error(request_id: str | None, code: str, message: str) -> dict:
     }
 
 
-def handle_line(
-    line: str, planner: Callable[[str], Plan] | None = None
-) -> tuple[dict, bool]:
+
+# Handle one request: validate it, run its operation, and build a reply.
+def handle_line(line: str) -> tuple[dict, bool]:
     """Process one JSON request and say whether the process should stop."""
+    # Part 1: Decode JSON and validate the request envelope.
     try:
         request = json.loads(line)
     except json.JSONDecodeError:
@@ -50,6 +52,7 @@ def handle_line(
     if not isinstance(payload, dict):
         return _error(request_id, "invalid_payload", "Payload must be an object"), False
 
+    # Part 2: Choose the operation requested by Rust.
     operation = payload.get("operation")
     should_stop = False
 
@@ -60,26 +63,8 @@ def handle_line(
         if not isinstance(user_message, str) or not user_message.strip():
             return _error(request_id, "invalid_message", "Message must not be empty"), False
         result = {"message": f"Sanvik Python received: {user_message}"}
-    elif operation == "plan_task":
-        task = payload.get("message")
-        if not isinstance(task, str) or not task.strip():
-            return _error(request_id, "empty_task", "Task must not be empty"), False
-
-        try:
-            if planner is None:
-                plan = plan_task(task)
-            else:
-                plan = planner(task)
-
-            if not isinstance(plan, Plan):
-                raise TypeError("Planner returned no Plan")
-            result = {"plan": plan.model_dump(mode="json")}
-        except PlanningError as exc:
-            return _error(request_id, exc.code, exc.public_message), False
-        except Exception:
-            logger.error("planning_failed_unexpected")
-            return _error(request_id, "internal_error", "Planning failed unexpectedly"), False
     elif operation == "run_task":
+        # The agent plans and executes; this IPC file only passes in the task.
         task = payload.get("message")
         if not isinstance(task, str) or not task.strip():
             return _error(request_id, "empty_task", "Task must not be empty"), False
@@ -101,6 +86,7 @@ def handle_line(
     else:
         return _error(request_id, "unknown_operation", "Unknown operation"), False
 
+    # Part 3: Wrap the operation result in the shared response format.
     response = {
         "version": PROTOCOL_VERSION,
         "type": "response",
@@ -111,22 +97,24 @@ def handle_line(
     return response, should_stop
 
 
-def serve(
-    input_stream: TextIO,
-    output_stream: TextIO,
-    planner: Callable[[str], Plan] | None = None,
-) -> None:
+
+# Keep reading requests from Rust until shutdown or the input pipe closes.
+def serve(input_stream: TextIO, output_stream: TextIO) -> None:
     for line in input_stream:
-        response, should_stop = handle_line(line, planner)
+        response, should_stop = handle_line(line)
         output_stream.write(json.dumps(response, ensure_ascii=False) + "\n")
         output_stream.flush()
         if should_stop:
             break
 
 
+
+# Connect the request loop to the Python process standard input/output.
 def main() -> None:
     serve(sys.stdin, sys.stdout)
 
 
+
+# Run main only when Rust starts this module as a Python program.
 if __name__ == "__main__":
     main()

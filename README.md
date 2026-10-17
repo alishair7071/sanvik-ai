@@ -1,7 +1,7 @@
 # Sanvik AI
 
 Sanvik AI is a Windows desktop application that turns a task into a structured plan.
-The first execution capability can open Notepad, write text, and verify the result.
+The current execution milestone opens Notepad, File Explorer, or Google Chrome. It can also type text into Notepad and verify the result.
 
 ## Run it locally
 
@@ -27,11 +27,14 @@ npm.cmd install
 npm.cmd run tauri -- dev
 ```
 
-Enter a request such as `Open Notepad and type Hello`. **Create plan** only shows
-the proposed steps. **Run Notepad task** plans and executes supported steps.
-Execution supports `launch_app` for Notepad, `type_text`, and `verify_result`.
-It checks the whole plan before acting, does not save the document, and reports
-step results after the task finishes.
+Enter a request such as `Open Notepad and type Hello`, then select **Run task**.
+Sanvik plans the task, checks the plan, executes supported steps, and shows the results.
+Execution currently supports opening Notepad, File Explorer, or Google Chrome, and opening
+Notepad to type text. The accepted application identifiers are `notepad`,
+`file_explorer`, and `chrome`. The accepted actions are `open_application`, `type_text`,
+`verify_application`, and `verify_text`. The entire plan is checked
+before acting. Text is not saved to a file, and step results appear after the
+task finishes.
 
 Rust, the MSVC C++ build tools, and WebView2 are needed to run Tauri on Windows.
 The Python executable can be overridden with `SANVIK_PYTHON`.
@@ -51,8 +54,9 @@ The Python executable can be overridden with `SANVIK_PYTHON`.
 | Provider selection and LangChain setup | `packages/agent/src/sanvik_agent/llm/provider.py` |
 | Shared planning prompt and model call | `packages/agent/src/sanvik_agent/agent/planner.py` |
 | Plan then execute graph | `packages/agent/src/sanvik_agent/agent/workflow.py` |
-| Supported actions and safety checks | `packages/agent/src/sanvik_agent/execution/executor.py` |
-| Notepad UI Automation | `packages/agent/src/sanvik_agent/execution/notepad.py` |
+| Plan safety checks | `packages/agent/src/sanvik_agent/execution/plan_validator.py` |
+| Supported action execution | `packages/agent/src/sanvik_agent/execution/executor.py` |
+| Windows UI Automation actions | `packages/agent/src/sanvik_agent/execution/windows.py` |
 
 Read [the request flow](docs/architecture/request-flow.md) for one complete
 example and [the repository map](docs/architecture/repository.md) for the layers.

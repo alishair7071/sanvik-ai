@@ -40,26 +40,6 @@ async fn send_message(
     .map_err(|error| format!("Python bridge task failed: {error}"))?
 }
 
-#[tauri::command]
-async fn plan_task(
-    task: String,
-    state: tauri::State<'_, Arc<RuntimeState>>,
-) -> Result<Plan, String> {
-    if task.trim().is_empty() {
-        return Err("Task must not be empty".into());
-    }
-
-    let runtime = Arc::clone(state.inner());
-    tauri::async_runtime::spawn_blocking(move || {
-        runtime
-            .exchange("plan_task", Some(&task))?
-            .plan
-            .ok_or_else(|| "Python response has no plan".into())
-    })
-    .await
-    .map_err(|error| format!("Python bridge task failed: {error}"))?
-}
-
 #[derive(Serialize)]
 struct RunResult {
     plan: Plan,
@@ -105,7 +85,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ping_runtime,
             send_message,
-            plan_task,
             run_task
         ])
         .build(tauri::generate_context!())
