@@ -7,9 +7,14 @@ tasks through a controlled tool.
 Supported computer actions currently include:
 
 - Open Notepad, File Explorer, or Google Chrome.
+- Close one visible File Explorer or Google Chrome window gracefully.
 - Type text into Notepad.
-- Verify that a supported application opened.
-- Verify text entered into Notepad.
+- Verify application opening, application closing, and Notepad text.
+
+Closing Notepad remains unsupported because unsaved text requires save-dialog
+handling. When several matching Chrome or File Explorer windows are open,
+Sanvik refuses to choose one automatically but accepts an explicit request to
+close all of them.
 
 ## Run locally
 

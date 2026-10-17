@@ -79,6 +79,10 @@ def test_graph_calls_model_and_validates_plan(monkeypatch) -> None:
     assert "Notepad (notepad)" in model.messages[0][1]
     assert "File Explorer (file_explorer)" in model.messages[0][1]
     assert "Google Chrome (chrome)" in model.messages[0][1]
+    assert "close_application" in model.messages[0][1]
+    assert "verify_application_closed" in model.messages[0][1]
+    assert "scope with the exact value all" in model.messages[0][1]
+    assert "Do not create a close plan for Notepad" in model.messages[0][1]
     assert model.messages[1] == ("human", "Open Notepad")
 
 

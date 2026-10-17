@@ -25,6 +25,12 @@ For a computer request, the conversation graph calls the
 validate, execute, and verify supported actions. The task result is returned to
 the conversation graph before it creates the final response.
 
+The execution layer can gracefully close one visible Chrome or File Explorer
+window. It reports an already-closed application as successful and refuses to
+choose when multiple matching windows exist unless the user explicitly requests
+that all matching windows close. Notepad closing and forceful process
+termination are not supported.
+
 ## Other operations
 
 - `ping` checks whether Python is ready.

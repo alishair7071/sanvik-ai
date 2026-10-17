@@ -3,9 +3,20 @@
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 DEFAULT_CHROME_PROFILE = "Default"
+
+APPLICATION_WINDOW_CLASSES = {
+    "chrome": "Chrome_WidgetWin_1",
+    "file_explorer": "CabinetWClass",
+}
+
+APPLICATION_PROCESS_NAMES = {
+    "chrome": "chrome.exe",
+    "file_explorer": "explorer.exe",
+}
 
 
 
@@ -31,10 +42,66 @@ def find_chrome() -> str:
 
 
 
-# Open Chrome directly in the trusted default profile.
-def open_chrome():
+# Return the executable name that owns a window.
+def get_process_name(process_id: int) -> str:
+    from pywinauto.application import process_module
+
+    process_path = process_module(process_id)
+    return Path(process_path).name.lower()
+
+
+
+# Find visible windows belonging to an approved application.
+def find_application_windows(application_name: str) -> list:
     from pywinauto import Desktop
 
+    window_class = APPLICATION_WINDOW_CLASSES.get(application_name)
+    process_name = APPLICATION_PROCESS_NAMES.get(application_name)
+
+    if window_class is None or process_name is None:
+        raise RuntimeError("Application window lookup is not supported")
+
+    desktop = Desktop(backend="uia")
+    found_windows = desktop.windows(
+        class_name=window_class,
+        visible_only=True,
+    )
+
+    windows = []
+
+    for found_window in found_windows:
+        try:
+            owner = get_process_name(found_window.process_id())
+        except Exception:
+            continue
+
+        if owner == process_name:
+            windows.append(desktop.window(handle=found_window.handle))
+
+    return windows
+
+
+
+# Wait until at least one real application window is visible.
+def wait_for_application_window(application_name: str):
+    deadline = time.monotonic() + 10
+
+    while time.monotonic() < deadline:
+        windows = find_application_windows(application_name)
+
+        if windows:
+            window = windows[0]
+            window.wait("visible", timeout=1)
+            return window
+
+        time.sleep(0.2)
+
+    raise RuntimeError("Application window did not become visible")
+
+
+
+# Open Chrome directly in the trusted default profile.
+def open_chrome():
     chrome_path = find_chrome()
     arguments = [
         chrome_path,
@@ -42,15 +109,7 @@ def open_chrome():
         "--new-window",
     ]
     subprocess.Popen(arguments)
-
-    # Chrome may create its window in a different process from the one started
-    # above, so find the visible browser window from the desktop.
-    window = Desktop(backend="uia").window(
-        class_name="Chrome_WidgetWin_1",
-        found_index=0,
-    )
-    window.wait("visible", timeout=10)
-    return window
+    return wait_for_application_window("chrome")
 
 
 
@@ -59,12 +118,28 @@ def open_application(executable: str):
     if executable == "chrome.exe":
         return open_chrome()
 
+    if executable == "explorer.exe":
+        subprocess.Popen([executable])
+        return wait_for_application_window("file_explorer")
+
     from pywinauto.application import Application
 
     app = Application(backend="uia").start(executable)
     window = app.top_window()
     window.wait("visible", timeout=10)
     return window
+
+
+
+# Ask an application window to close normally.
+def close_application(window) -> None:
+    window.close()
+
+
+
+# Confirm that the selected application window no longer exists.
+def verify_application_closed(window) -> None:
+    window.wait_not("exists", timeout=10)
 
 
 

@@ -32,6 +32,18 @@ def open_only_plan(application: str) -> Plan:
     ])
 
 
+def close_only_plan(application: str, close_all: bool = False) -> Plan:
+    parameters = {"application": application}
+
+    if close_all:
+        parameters["scope"] = "all"
+
+    return make_plan([
+        step("close_application", parameters, "SENSITIVE"),
+        step("verify_application_closed", {}, "READ_ONLY"),
+    ])
+
+
 def test_notepad_opens_types_and_verifies(monkeypatch) -> None:
     window = object()
     calls = []
@@ -181,3 +193,130 @@ def test_failed_text_step_stops_execution(monkeypatch) -> None:
     assert result["completed"] is False
     assert [item["success"] for item in result["steps"]] == [True, False]
     assert "editor unavailable" not in result["steps"][-1]["message"]
+
+@pytest.mark.parametrize("application", ["chrome", "file_explorer"])
+def test_supported_application_can_close(monkeypatch, application) -> None:
+    window = object()
+    calls = []
+
+    monkeypatch.setattr(
+        executor,
+        "find_application_windows",
+        lambda name: calls.append(("find", name)) or [window],
+    )
+    monkeypatch.setattr(
+        executor,
+        "close_application",
+        lambda target: calls.append(("close", target)),
+    )
+    monkeypatch.setattr(
+        executor,
+        "verify_application_closed",
+        lambda target: calls.append(("verify_closed", target)),
+    )
+
+    result = executor.execute_plan(close_only_plan(application))
+
+    assert result["completed"] is True
+    assert calls == [
+        ("find", application),
+        ("close", window),
+        ("verify_closed", window),
+    ]
+
+
+def test_already_closed_application_is_successful(monkeypatch) -> None:
+    monkeypatch.setattr(executor, "find_application_windows", lambda name: [])
+
+    result = executor.execute_plan(close_only_plan("chrome"))
+
+    assert result["completed"] is True
+    assert result["steps"][0]["message"] == "Application was already closed"
+    assert result["steps"][1]["message"] == "Verified"
+
+
+def test_multiple_windows_are_not_closed_automatically(monkeypatch) -> None:
+    closed = []
+    monkeypatch.setattr(
+        executor,
+        "find_application_windows",
+        lambda name: [object(), object()],
+    )
+    monkeypatch.setattr(
+        executor,
+        "close_application",
+        lambda window: closed.append(window),
+    )
+
+    result = executor.execute_plan(close_only_plan("chrome"))
+
+    assert result["completed"] is False
+    assert "2 application windows" in result["steps"][0]["message"]
+    assert closed == []
+
+
+def test_explicit_close_all_closes_and_verifies_every_window(monkeypatch) -> None:
+    first_window = object()
+    second_window = object()
+    closed = []
+    verified = []
+
+    monkeypatch.setattr(
+        executor,
+        "find_application_windows",
+        lambda name: [first_window, second_window],
+    )
+    monkeypatch.setattr(
+        executor,
+        "close_application",
+        lambda window: closed.append(window),
+    )
+    monkeypatch.setattr(
+        executor,
+        "verify_application_closed",
+        lambda window: verified.append(window),
+    )
+
+    result = executor.execute_plan(close_only_plan("chrome", close_all=True))
+
+    assert result["completed"] is True
+    assert result["steps"][0]["message"] == "Closed 2 application windows"
+    assert closed == [first_window, second_window]
+    assert verified == [first_window, second_window]
+
+
+def test_notepad_closing_is_not_supported(monkeypatch) -> None:
+    found = []
+    monkeypatch.setattr(
+        executor,
+        "find_application_windows",
+        lambda name: found.append(name),
+    )
+
+    with pytest.raises(executor.UnsupportedPlan, match="Closing is supported only"):
+        executor.execute_plan(close_only_plan("notepad"))
+
+    assert found == []
+
+
+def test_close_plan_requires_sensitive_risk() -> None:
+    plan = make_plan([
+        step("close_application", {"application": "chrome"}, "REVERSIBLE"),
+        step("verify_application_closed", {}, "READ_ONLY"),
+    ])
+
+    with pytest.raises(executor.UnsupportedPlan, match="SENSITIVE"):
+        executor.execute_plan(plan)
+
+def test_invalid_close_scope_is_rejected() -> None:
+    plan = make_plan([
+        step(
+            "close_application",
+            {"application": "chrome", "scope": "first"},
+            "SENSITIVE",
+        ),
+        step("verify_application_closed", {}, "READ_ONLY"),
+    ])
+
+    with pytest.raises(executor.UnsupportedPlan, match="scope"):
+        executor.execute_plan(plan)
