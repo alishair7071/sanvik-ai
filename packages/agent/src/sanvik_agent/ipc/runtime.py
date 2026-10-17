@@ -1,4 +1,4 @@
-﻿"""Line-delimited JSON entry point for the local Tauri process bridge."""
+"""Line-delimited JSON entry point for the local Tauri process bridge."""
 
 import json
 import logging
@@ -58,11 +58,40 @@ def handle_line(line: str) -> tuple[dict, bool]:
 
     if operation == "ping":
         result = {"message": "Sanvik Python runtime is running"}
+
     elif operation == "echo":
         user_message = payload.get("message")
         if not isinstance(user_message, str) or not user_message.strip():
             return _error(request_id, "invalid_message", "Message must not be empty"), False
         result = {"message": f"Sanvik Python received: {user_message}"}
+
+    elif operation == "chat_message":
+        user_message = payload.get("message")
+        conversation_id = payload.get("conversation_id")
+
+        if not isinstance(user_message, str) or not user_message.strip():
+            return _error(request_id, "invalid_message", "Message must not be empty"), False
+        if (
+            not isinstance(conversation_id, str)
+            or not conversation_id.strip()
+            or len(conversation_id) > 128
+        ):
+            return _error(
+                request_id,
+                "invalid_conversation_id",
+                "Conversation ID must be a non-empty string of at most 128 characters",
+            ), False
+
+        try:
+            from sanvik_agent.agent.conversation import chat
+
+            result = {"message": chat(user_message, conversation_id)}
+        except PlanningError as error:
+            return _error(request_id, error.code, error.public_message), False
+        except Exception:
+            logger.error("chat_failed_unexpected")
+            return _error(request_id, "internal_error", "Chat request failed unexpectedly"), False
+
     elif operation == "run_task":
         # The agent plans and executes; this IPC file only passes in the task.
         task = payload.get("message")
@@ -73,16 +102,18 @@ def handle_line(line: str) -> tuple[dict, bool]:
             from sanvik_agent.agent.workflow import run_task
 
             result = run_task(task)
-        except UnsupportedPlan as exc:
-            return _error(request_id, "unsupported_plan", str(exc)), False
-        except PlanningError as exc:
-            return _error(request_id, exc.code, exc.public_message), False
+        except UnsupportedPlan as error:
+            return _error(request_id, "unsupported_plan", str(error)), False
+        except PlanningError as error:
+            return _error(request_id, error.code, error.public_message), False
         except Exception:
             logger.error("execution_failed_unexpected")
             return _error(request_id, "internal_error", "Task failed unexpectedly"), False
+
     elif operation == "shutdown":
         result = {"message": "Sanvik Python runtime is shutting down"}
         should_stop = True
+
     else:
         return _error(request_id, "unknown_operation", "Unknown operation"), False
 

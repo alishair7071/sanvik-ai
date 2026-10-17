@@ -30,13 +30,26 @@ def find_chrome() -> str:
 
 # Open the validated executable and return its visible window.
 def open_application(executable: str):
+    from pywinauto import Desktop
     from pywinauto.application import Application
 
-    if executable == "chrome.exe":
+    is_chrome = executable == "chrome.exe"
+
+    if is_chrome:
         executable = find_chrome()
 
     app = Application(backend="uia").start(executable)
-    window = app.top_window()
+
+    if is_chrome:
+        # Chrome may create its window in a different process from the one
+        # started above. Find the visible browser window from the desktop.
+        window = Desktop(backend="uia").window(
+            class_name="Chrome_WidgetWin_1",
+            found_index=0,
+        )
+    else:
+        window = app.top_window()
+
     window.wait("visible", timeout=10)
     return window
 
@@ -52,8 +65,7 @@ def type_text(window, text: str) -> None:
 
 # Confirm that the application window is visible.
 def verify_application(window) -> None:
-    if not window.is_visible():
-        raise RuntimeError("Application window is not visible")
+    window.wait("visible", timeout=5)
 
 
 

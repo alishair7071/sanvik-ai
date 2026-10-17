@@ -16,6 +16,7 @@ use crate::python_process_manager::PythonProcess;
 const PROTOCOL_VERSION: u8 = 1;
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
 const RUN_TIMEOUT: Duration = Duration::from_secs(90);
+const CHAT_TIMEOUT: Duration = Duration::from_secs(180);
 
 #[derive(Serialize)]
 struct Request<'a> {
@@ -31,6 +32,8 @@ struct RequestPayload<'a> {
     operation: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     message: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    conversation_id: Option<&'a str>,
 }
 
 #[derive(Deserialize)]
@@ -89,13 +92,18 @@ impl PythonProcess {
         id: &str,
         operation: &str,
         message: Option<&str>,
+        conversation_id: Option<&str>,
     ) -> Result<ResponsePayload, String> {
         // Encode a versioned, correlated request for the Python IPC handler.
         let request = Request {
             version: PROTOCOL_VERSION,
             kind: "request",
             id,
-            payload: RequestPayload { operation, message },
+            payload: RequestPayload {
+                operation,
+                message,
+                conversation_id,
+            },
         };
         let encoded = serde_json::to_string(&request)
             .map_err(|error| format!("Cannot encode request: {error}"))?;
@@ -103,10 +111,10 @@ impl PythonProcess {
         self.write_line(&encoded)?;
 
         // Wait for one response from Python's stdout, with more time for task execution.
-        let timeout = if operation == "run_task" {
-            RUN_TIMEOUT
-        } else {
-            RESPONSE_TIMEOUT
+        let timeout = match operation {
+            "chat_message" => CHAT_TIMEOUT,
+            "run_task" => RUN_TIMEOUT,
+            _ => RESPONSE_TIMEOUT,
         };
         let line = self.read_line(timeout)?;
         // Parse and validate the response before returning any result to a Tauri command.
@@ -131,7 +139,7 @@ impl PythonProcess {
 
     fn shutdown(&mut self, id: &str) {
         // Ask Python to exit through the same protocol, then allow a short grace period.
-        let _ = self.request(id, "shutdown", None);
+        let _ = self.request(id, "shutdown", None, None);
         self.wait_for_exit();
     }
 }
@@ -174,6 +182,7 @@ impl RuntimeState {
         &self,
         operation: &str,
         message: Option<&str>,
+        conversation_id: Option<&str>,
     ) -> Result<ResponsePayload, String> {
         let mut guard = self
             .process
@@ -183,10 +192,12 @@ impl RuntimeState {
             *guard = Some(PythonProcess::start()?);
         }
         let id = self.request_id();
-        let result = guard
-            .as_mut()
-            .expect("Python process was started")
-            .request(&id, operation, message);
+        let result = guard.as_mut().expect("Python process was started").request(
+            &id,
+            operation,
+            message,
+            conversation_id,
+        );
         if result.is_err() {
             *guard = None;
         }
@@ -211,14 +222,16 @@ mod tests {
     fn python_ipc_bridge_handles_requests_errors_and_shutdown() {
         let runtime = RuntimeState::new();
 
-        let ping = runtime.exchange("ping", None).expect("ping should succeed");
+        let ping = runtime
+            .exchange("ping", None, None)
+            .expect("ping should succeed");
         assert_eq!(
             ping.message.as_deref(),
             Some("Sanvik Python runtime is running")
         );
 
         let echo = runtime
-            .exchange("echo", Some("Hello"))
+            .exchange("echo", Some("Hello"), None)
             .expect("echo should succeed");
         assert_eq!(
             echo.message.as_deref(),
@@ -226,13 +239,13 @@ mod tests {
         );
 
         let error = runtime
-            .exchange("unknown", None)
+            .exchange("unknown", None, None)
             .err()
             .expect("unknown operation should fail");
         assert!(error.contains("unknown_operation"));
 
         // An error discards the process; the next request starts a new one.
-        assert!(runtime.exchange("ping", None).is_ok());
+        assert!(runtime.exchange("ping", None, None).is_ok());
         runtime.shutdown();
         assert!(runtime.process.lock().unwrap().is_none());
     }

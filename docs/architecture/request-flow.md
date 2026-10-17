@@ -1,60 +1,54 @@
-# One task through Sanvik
+# One chat turn through Sanvik
 
-Example task: **Open Notepad and type Hello**. The model may phrase the plan
-steps differently. The execution layer checks every step before acting.
+Example message: **Open Notepad and type Hello**.
 
 ```text
-React form -> Tauri run_task command -> Rust stdin -> Python IPC
-           -> LangGraph workflow -> planner -> checked plan -> execution
-           -> Python stdout -> Rust response -> React result
+React chat -> Tauri chat_message -> Rust stdin -> Python IPC
+           -> conversation LangGraph
+              -> direct answer, or computer tool
+                 -> task LangGraph -> planner -> validator -> execution
+              -> final assistant answer
+           -> Python stdout -> Rust -> React chat
 ```
 
-## Outbound request
+## Request path
 
-1. `apps/desktop/src/App.tsx`: submitting the form calls `runTask(task)` and
-   shows a loading state.
-2. `apps/desktop/src/bridge/runtime.ts`: `runTask()` invokes Tauri's `run_task`
-   command. `bridge/types.ts` describes the returned plan and execution result.
-3. `apps/desktop/src-tauri/src/lib.rs`: the command forwards the task through
-   `RuntimeState.exchange("run_task", ...)`.
-4. `apps/desktop/src-tauri/src/python_ipc_bridge.rs` builds a versioned JSON
-   request. `python_process_manager.rs` writes it to the long-running Python
-   process's stdin:
+1. `apps/desktop/src/App.tsx` adds the user's message to the chat and calls
+   `sendChatMessage(message, conversationId)`.
+2. `apps/desktop/src/bridge/runtime.ts` invokes Tauri's `chat_message` command.
+3. `apps/desktop/src-tauri/src/lib.rs` validates the values and calls the local
+   Python bridge.
+4. `python_ipc_bridge.rs` writes a versioned JSON line to Python:
 
    ```json
-   {"version":1,"type":"request","id":"example-1","payload":{"operation":"run_task","message":"Open Notepad and type Hello"}}
+   {"version":1,"type":"request","id":"123-1","payload":{"operation":"chat_message","message":"Open Notepad and type Hello","conversation_id":"example-chat"}}
    ```
 
-5. `packages/agent/src/sanvik_agent/ipc/runtime.py`: `serve()` reads the line;
-   `handle_line()` validates it and calls `run_task(task)`.
-6. `agent/workflow.py`: LangGraph calls its planning node, then its execution
-   node. The planning node calls `agent/planner.py`; the execution node calls
-   `execution/executor.py`.
-7. `agent/planner.py` selects a LangChain model through `llm/provider.py` and
-   asks it for a structured `Plan`. `agent/plan.py` validates that structure.
-8. `execution/executor.py` checks the *entire* plan against supported actions
-   and parameters before dispatching anything. `execution/windows.py` performs
-   Windows actions and verifies their observable results.
+5. `packages/agent/src/sanvik_agent/ipc/runtime.py` validates the request and
+   calls `agent/conversation.py`.
+6. The conversation graph asks the model whether it can answer directly or
+   should call `run_computer_task`.
+7. For a computer request, `tools/computer_task_tool.py` calls the existing
+   `agent/workflow.py`. That graph creates a validated plan and passes it to
+   the execution layer.
+8. The tool result returns to the conversation graph. The model uses that real
+   result to write the assistant reply.
 
-## Return path
+## Response path
 
-1. Python writes the plan and execution results as one JSON response line to
-   stdout. Stdout is reserved for the protocol; diagnostics use stderr.
-2. Rust checks the protocol version and request ID, deserializes the response,
-   and returns it through the Tauri command.
-3. React shows the task, planned steps, and each action's result.
+Python writes one JSON response line to stdout. Rust checks the version and
+request ID, extracts `payload.message`, and returns it to React. React adds the
+text as an assistant message.
 
-A rejected plan returns an `unsupported_plan` error before desktop actions.
-An action can still fail during execution; then `execution.completed` is false.
-The response arrives after execution; this version does not stream progress.
+The same `conversation_id` is reused for every message in the open UI session,
+so LangGraph can include earlier messages. This memory currently lives only in
+the Python process and is cleared when the desktop app exits.
 
-## Why these boundaries exist
+## Boundaries
 
-Tauri manages its window and the Python child process. Python owns planning,
-policy checks, and computer operations. Stdin/stdout avoids a local HTTP server
-and port management for this single-client desktop app. Vite's development URL
-serves the React page; it is not the Tauri-to-Python channel.
-
-The plan's `risk_level`, `action`, and parameters are untrusted model output.
-Schema validation in `agent/plan.py` checks their shape; the executor checks
-whether each action and parameter is actually supported before acting.
+- React owns chat display and input.
+- Rust owns the desktop process boundary and request transport.
+- The conversation graph decides between a direct answer and the computer tool.
+- The task graph plans and coordinates execution.
+- The execution layer validates model output and performs supported Windows actions.
+- Stdout is reserved for JSON protocol messages; diagnostics use stderr.

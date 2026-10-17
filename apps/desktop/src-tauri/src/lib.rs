@@ -12,7 +12,7 @@ async fn ping_runtime(state: tauri::State<'_, Arc<RuntimeState>>) -> Result<Stri
     let runtime = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
         runtime
-            .exchange("ping", None)?
+            .exchange("ping", None, None)?
             .message
             .ok_or_else(|| "Python response has no message".into())
     })
@@ -32,7 +32,31 @@ async fn send_message(
     let runtime = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
         runtime
-            .exchange("echo", Some(&message))?
+            .exchange("echo", Some(&message), None)?
+            .message
+            .ok_or_else(|| "Python response has no message".into())
+    })
+    .await
+    .map_err(|error| format!("Python bridge task failed: {error}"))?
+}
+
+#[tauri::command]
+async fn chat_message(
+    message: String,
+    conversation_id: String,
+    state: tauri::State<'_, Arc<RuntimeState>>,
+) -> Result<String, String> {
+    if message.trim().is_empty() {
+        return Err("Message must not be empty".into());
+    }
+    if conversation_id.trim().is_empty() || conversation_id.len() > 128 {
+        return Err("Conversation ID must contain 1 to 128 characters".into());
+    }
+
+    let runtime = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        runtime
+            .exchange("chat_message", Some(&message), Some(&conversation_id))?
             .message
             .ok_or_else(|| "Python response has no message".into())
     })
@@ -57,7 +81,7 @@ async fn run_task(
 
     let runtime = Arc::clone(state.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        let response = runtime.exchange("run_task", Some(&task))?;
+        let response = runtime.exchange("run_task", Some(&task), None)?;
         let plan = response.plan.ok_or("Python response has no plan")?;
         let execution = response
             .execution
@@ -67,12 +91,14 @@ async fn run_task(
     .await
     .map_err(|error| format!("Python bridge task failed: {error}"))?
 }
+
 pub fn run() {
     let app = tauri::Builder::default()
         .setup(|app| {
             // Share one Python runtime across all Tauri commands.
             let runtime = Arc::new(RuntimeState::new());
             app.manage(Arc::clone(&runtime));
+
             // Start Python in the background so opening the window is not blocked.
             std::thread::spawn(move || {
                 if let Err(error) = runtime.start() {
@@ -85,6 +111,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ping_runtime,
             send_message,
+            chat_message,
             run_task
         ])
         .build(tauri::generate_context!())
