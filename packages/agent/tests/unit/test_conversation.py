@@ -61,7 +61,7 @@ def test_computer_request_runs_tool_then_returns_final_answer(monkeypatch) -> No
             content="",
             tool_calls=[{
                 "name": "run_computer_task",
-                "args": {"task": "Open Chrome"},
+                "args": {"task": "Open Google Chrome."},
                 "id": "tool-call-1",
                 "type": "tool_call",
             }],
@@ -72,16 +72,34 @@ def test_computer_request_runs_tool_then_returns_final_answer(monkeypatch) -> No
     monkeypatch.setattr(conversation, "get_chat_model", lambda: model)
     monkeypatch.setattr(conversation, "run_computer_task", computer_tool)
 
-    answer = conversation.chat("Open Chrome", new_conversation_id())
+    answer = conversation.chat("Could you please get Chrome going for me?", new_conversation_id())
 
     assert answer == "Chrome opened successfully."
-    assert computer_tool.tasks == ["Open Chrome"]
+    assert computer_tool.tasks == ["Open Google Chrome."]
     assert len(model.calls) == 2
     assert model.tools == [computer_tool]
+
+    system_prompt = model.calls[0][0].content
+    assert "clear, self-contained task" in system_prompt
+    assert "refined request" in system_prompt
 
     tool_result = model.calls[1][-1]
     assert isinstance(tool_result, ToolMessage)
     assert json.loads(tool_result.content)["execution"]["completed"] is True
+
+
+def test_ambiguous_action_returns_clarifying_question(monkeypatch) -> None:
+    model = FakeChatModel([
+        AIMessage(content="Which application would you like me to open?"),
+    ])
+    computer_tool = FakeComputerTool()
+    monkeypatch.setattr(conversation, "get_chat_model", lambda: model)
+    monkeypatch.setattr(conversation, "run_computer_task", computer_tool)
+
+    answer = conversation.chat("Open it", new_conversation_id())
+
+    assert answer == "Which application would you like me to open?"
+    assert computer_tool.tasks == []
 
 
 def test_conversation_remembers_previous_messages(monkeypatch) -> None:
