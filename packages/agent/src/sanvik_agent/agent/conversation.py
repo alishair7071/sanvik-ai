@@ -12,6 +12,7 @@ from sanvik_agent.tools import run_computer_task
 SYSTEM_PROMPT = (
     "You are Sanvik AI, a helpful Windows computer assistant. "
     "Answer general questions directly. "
+    "A supported computer request can include playing a YouTube video. "
     "When the user asks you to operate their computer, first rewrite the request "
     "as a clear, self-contained task for the computer operator. Resolve references "
     "such as 'it' from the conversation. Preserve the user's exact intent, text, "

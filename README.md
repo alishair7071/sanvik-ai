@@ -11,6 +11,11 @@ Supported computer actions currently include:
 - Type text into Notepad.
 - Verify application opening, application closing, and Notepad text.
 
+The agent can play a YouTube video through Playwright. Sanvik creates a
+validated plan, searches YouTube in a visible dedicated Sanvik Chrome profile,
+opens the first normal video result, verifies playback, and reports the result
+in chat.
+
 Closing Notepad remains unsupported because unsaved text requires save-dialog
 handling. When several matching Chrome or File Explorer windows are open,
 Sanvik refuses to choose one automatically but accepts an explicit request to
@@ -62,6 +67,7 @@ Set `SANVIK_PYTHON` to override the Python executable used by the desktop app.
 | Plan safety checks | `packages/agent/src/sanvik_agent/execution/plan_validator.py` |
 | Action dispatch | `packages/agent/src/sanvik_agent/execution/executor.py` |
 | Windows actions | `packages/agent/src/sanvik_agent/execution/windows.py` |
+| Playwright browser foundation | `packages/agent/src/sanvik_agent/execution/browser.py` |
 
 See [the request flow](docs/architecture/request-flow.md) and
 [the IPC protocol](docs/architecture/ipc-protocol.md) for the end-to-end path.

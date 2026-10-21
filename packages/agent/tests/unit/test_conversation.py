@@ -88,6 +88,46 @@ def test_computer_request_runs_tool_then_returns_final_answer(monkeypatch) -> No
     assert json.loads(tool_result.content)["execution"]["completed"] is True
 
 
+def test_youtube_request_returns_the_video_execution_result(monkeypatch) -> None:
+    model = FakeChatModel([
+        AIMessage(
+            content="",
+            tool_calls=[{
+                "name": "run_computer_task",
+                "args": {"task": "Play Big Buck Bunny on YouTube."},
+                "id": "tool-call-youtube",
+                "type": "tool_call",
+            }],
+        ),
+        AIMessage(content="Big Buck Bunny is now playing on YouTube."),
+    ])
+    tasks = []
+    task_result = {
+        "plan": {
+            "goal": "Play Big Buck Bunny on YouTube",
+            "steps": [{"action": "play_youtube_video"}],
+        },
+        "execution": {
+            "completed": True,
+            "video": {"title": "Big Buck Bunny - YouTube", "playing": True},
+        },
+    }
+
+    def fake_run_task(task: str) -> dict:
+        tasks.append(task)
+        return task_result
+
+    monkeypatch.setattr(conversation, "get_chat_model", lambda: model)
+    monkeypatch.setattr("sanvik_agent.tools.computer_task_tool.run_task", fake_run_task)
+
+    answer = conversation.chat("Play Big Buck Bunny on YouTube", new_conversation_id())
+
+    assert answer == "Big Buck Bunny is now playing on YouTube."
+    assert tasks == ["Play Big Buck Bunny on YouTube."]
+    tool_result = model.calls[1][-1]
+    assert json.loads(tool_result.content) == task_result
+
+
 def test_ambiguous_action_returns_clarifying_question(monkeypatch) -> None:
     model = FakeChatModel([
         AIMessage(content="Which application would you like me to open?"),

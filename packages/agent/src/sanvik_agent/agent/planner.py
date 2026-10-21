@@ -15,7 +15,7 @@ from sanvik_agent.llm.provider import PlanningError, get_chat_model
 
 
 def build_system_prompt() -> str:
-    """Build the prompt from the applications allowed by the validator."""
+    """Build the prompt from the actions allowed by the validator."""
     supported = ", ".join(
         f"{details['name']} ({application_name})"
         for application_name, details in SUPPORTED_APPLICATIONS.items()
@@ -23,7 +23,7 @@ def build_system_prompt() -> str:
     closeable = ", ".join(sorted(CLOSEABLE_APPLICATIONS))
 
     return (
-        f"Create a plan only for these supported applications: {supported}. "
+        f"Create a plan only for these supported Windows applications: {supported}. "
         "For an open request, start with open_application. Its parameters must "
         "contain only the application key with the exact application name from "
         "the supported list. Finish an open-only request with verify_application "
@@ -37,8 +37,11 @@ def build_system_prompt() -> str:
         "the parameter scope with the exact value all. Otherwise do not include "
         "scope. Then use verify_application_closed with empty parameters and the "
         "READ_ONLY risk level. Do not create a close plan for Notepad. "
-        "Do not mix opening and closing in one plan. Do not invent other "
-        "applications, actions, or parameters."
+        "For a YouTube video request, create exactly one play_youtube_video "
+        "step. Its parameters must contain only query with the exact requested "
+        "video text. Use the REVERSIBLE risk level. Do not mix a YouTube video "
+        "step with application steps. Do not invent other applications, actions, "
+        "or parameters."
     )
 
 

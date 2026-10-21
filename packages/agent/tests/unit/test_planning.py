@@ -30,6 +30,19 @@ VALID_PLAN = {
 }
 
 
+YOUTUBE_VIDEO_PLAN = {
+    "goal": "Play Big Buck Bunny on YouTube",
+    "steps": [
+        {
+            "action": "play_youtube_video",
+            "parameters": {"query": "Big Buck Bunny"},
+            "expected_result": "The requested video is playing",
+            "risk_level": "REVERSIBLE",
+        },
+    ],
+}
+
+
 class FakeChatModel:
     def __init__(self, result=None, error=None) -> None:
         self.result = result
@@ -84,6 +97,19 @@ def test_graph_calls_model_and_validates_plan(monkeypatch) -> None:
     assert "scope with the exact value all" in model.messages[0][1]
     assert "Do not create a close plan for Notepad" in model.messages[0][1]
     assert model.messages[1] == ("human", "Open Notepad")
+
+
+def test_graph_creates_a_youtube_video_plan(monkeypatch) -> None:
+    model = FakeChatModel(YOUTUBE_VIDEO_PLAN)
+    monkeypatch.setattr("sanvik_agent.agent.planner.get_chat_model", lambda: model)
+
+    result = workflow.invoke({"task": "Play Big Buck Bunny on YouTube"})
+
+    assert result["plan"].steps[0].action == "play_youtube_video"
+    assert result["plan"].steps[0].parameters == {"query": "Big Buck Bunny"}
+    assert "play_youtube_video" in model.messages[0][1]
+    assert "parameters must contain only query" in model.messages[0][1]
+    assert "Do not mix a YouTube video step with application steps" in model.messages[0][1]
 
 
 def test_task_is_trimmed_and_default_model_is_selected(monkeypatch) -> None:

@@ -40,6 +40,35 @@ def get_executable(application_name: str) -> str:
 
 
 
+# Validate one safe YouTube video action and return its cleaned query.
+def check_youtube_video_plan(plan: Plan) -> str:
+    if len(plan.steps) != 1:
+        raise UnsupportedPlan("Playing a YouTube video needs exactly one step")
+
+    video_step = plan.steps[0]
+
+    if video_step.action != "play_youtube_video":
+        raise UnsupportedPlan("The YouTube action must be play_youtube_video")
+
+    if video_step.parameters.keys() != {"query"}:
+        raise UnsupportedPlan("play_youtube_video needs only a query")
+
+    query = video_step.parameters["query"]
+
+    if not isinstance(query, str):
+        raise UnsupportedPlan("YouTube video query must be text")
+
+    query = query.strip()
+
+    if not query or len(query) > 200:
+        raise UnsupportedPlan("YouTube video query must contain 1 to 200 characters")
+
+    if video_step.risk_level != RiskLevel.REVERSIBLE:
+        raise UnsupportedPlan("play_youtube_video must use the REVERSIBLE risk level")
+
+    return query
+
+
 # Validate an open plan and return its trusted application name.
 def check_open_plan(plan: Plan) -> str:
     for step in plan.steps:
@@ -134,4 +163,7 @@ def check_plan(plan: Plan) -> str:
     if first_action == "close_application":
         return check_close_plan(plan)
 
-    raise UnsupportedPlan("The plan must start by opening or closing an application")
+    if first_action == "play_youtube_video":
+        return check_youtube_video_plan(plan)
+
+    raise UnsupportedPlan("The plan must start by opening, closing, or playing a YouTube video")

@@ -320,3 +320,67 @@ def test_invalid_close_scope_is_rejected() -> None:
 
     with pytest.raises(executor.UnsupportedPlan, match="scope"):
         executor.execute_plan(plan)
+
+
+def youtube_video_plan(query: str = "Big Buck Bunny") -> Plan:
+    return make_plan([
+        step("play_youtube_video", {"query": query}),
+    ])
+
+
+def test_youtube_video_plan_uses_the_persistent_browser_session(monkeypatch) -> None:
+    browser_session = object()
+    calls = []
+    monkeypatch.setattr(executor, "get_browser_session", lambda: browser_session)
+    monkeypatch.setattr(
+        executor,
+        "play_youtube_video",
+        lambda session, query: calls.append((session, query)) or {
+            "success": True,
+            "title": "Big Buck Bunny - YouTube",
+            "url": "https://www.youtube.com/watch?v=test",
+            "playing": True,
+        },
+    )
+
+    result = executor.execute_plan(youtube_video_plan())
+
+    assert calls == [(browser_session, "Big Buck Bunny")]
+    assert result == {
+        "completed": True,
+        "steps": [
+            {
+                "action": "play_youtube_video",
+                "success": True,
+                "message": "YouTube video is playing",
+            },
+        ],
+        "video": {
+            "success": True,
+            "title": "Big Buck Bunny - YouTube",
+            "url": "https://www.youtube.com/watch?v=test",
+            "playing": True,
+        },
+    }
+
+
+def test_youtube_video_failure_returns_a_safe_result(monkeypatch) -> None:
+    monkeypatch.setattr(executor, "get_browser_session", lambda: object())
+
+    def fail_to_play(session, query):
+        raise RuntimeError("browser details should not reach the user")
+
+    monkeypatch.setattr(executor, "play_youtube_video", fail_to_play)
+
+    result = executor.execute_plan(youtube_video_plan())
+
+    assert result == {
+        "completed": False,
+        "steps": [
+            {
+                "action": "play_youtube_video",
+                "success": False,
+                "message": "Video could not be played or verified",
+            },
+        ],
+    }

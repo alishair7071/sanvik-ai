@@ -1,8 +1,9 @@
-"""Execute an already validated application plan."""
+"""Execute already validated Windows and browser plans."""
 
 import logging
 
 from sanvik_agent.agent.plan import Plan
+from sanvik_agent.execution.browser import BrowserSession
 from sanvik_agent.execution.plan_validator import (
     UnsupportedPlan,
     check_plan,
@@ -17,15 +18,63 @@ from sanvik_agent.execution.windows import (
     verify_application_closed,
     verify_text,
 )
+from sanvik_agent.execution.youtube import play_youtube_video
+
 
 logger = logging.getLogger(__name__)
+_browser_session = None
 
+
+# Reuse one Playwright browser while the local Python runtime is alive.
+def get_browser_session():
+    global _browser_session
+
+    if _browser_session is None:
+        _browser_session = BrowserSession()
+
+    return _browser_session
+
+
+# Run the validated YouTube workflow and return its verified result.
+def execute_youtube_video_plan(query: str) -> dict:
+    try:
+        session = get_browser_session()
+        video = play_youtube_video(session, query)
+    except Exception:
+        logger.exception("YouTube video action failed")
+        return {
+            "completed": False,
+            "steps": [
+                {
+                    "action": "play_youtube_video",
+                    "success": False,
+                    "message": "Video could not be played or verified",
+                },
+            ],
+        }
+
+    return {
+        "completed": True,
+        "steps": [
+            {
+                "action": "play_youtube_video",
+                "success": True,
+                "message": "YouTube video is playing",
+            },
+        ],
+        "video": video,
+    }
 
 
 # Run each approved step and stop if an action fails.
 def execute_plan(plan: Plan) -> dict:
-    application_name = check_plan(plan)
+    first_action = plan.steps[0].action
+    validated_value = check_plan(plan)
 
+    if first_action == "play_youtube_video":
+        return execute_youtube_video_plan(validated_value)
+
+    application_name = validated_value
     results = []
     window = None
     windows_to_verify = []

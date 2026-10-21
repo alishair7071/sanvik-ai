@@ -39,3 +39,46 @@ def test_run_task_ipc_response_keeps_request_id(monkeypatch) -> None:
     assert response["success"] is True
     assert response["payload"] == fake_result
     assert not stop
+
+
+def test_run_graph_executes_a_youtube_video_plan(monkeypatch) -> None:
+    plan = Plan.model_validate({
+        "goal": "Play Big Buck Bunny on YouTube",
+        "steps": [
+            {
+                "action": "play_youtube_video",
+                "parameters": {"query": "Big Buck Bunny"},
+                "expected_result": "The requested video is playing",
+                "risk_level": "REVERSIBLE",
+            },
+        ],
+    })
+    execution = {
+        "completed": True,
+        "steps": [
+            {
+                "action": "play_youtube_video",
+                "success": True,
+                "message": "YouTube video is playing",
+            },
+        ],
+        "video": {
+            "title": "Big Buck Bunny - YouTube",
+            "playing": True,
+        },
+    }
+    calls = []
+    monkeypatch.setattr(workflow, "plan_task", lambda task: calls.append(("plan", task)) or plan)
+    monkeypatch.setattr(
+        workflow,
+        "execute_plan",
+        lambda selected: calls.append(("execute", selected)) or execution,
+    )
+
+    result = workflow.run_task("Play Big Buck Bunny on YouTube")
+
+    assert calls == [
+        ("plan", "Play Big Buck Bunny on YouTube"),
+        ("execute", plan),
+    ]
+    assert result["execution"] == execution
