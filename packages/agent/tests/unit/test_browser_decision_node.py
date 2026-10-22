@@ -44,7 +44,6 @@ def create_observed_state():
 def test_choose_browser_action_returns_a_controlled_action_request() -> None:
     model = FakeModel(
         BrowserTaskDecision(
-            decision="action",
             action="fill_element",
             parameters={
                 "observation_id": "observation_1",
@@ -71,7 +70,7 @@ def test_choose_browser_action_returns_a_controlled_action_request() -> None:
 def test_choose_browser_action_returns_completed_result() -> None:
     model = FakeModel(
         BrowserTaskDecision(
-            decision="complete",
+            action="complete",
             final_message="The search results are open.",
         )
     )
@@ -92,3 +91,19 @@ def test_build_decision_prompt_requires_an_observation() -> None:
 
     with pytest.raises(ValueError, match="no current observation"):
         build_decision_prompt(state)
+
+def test_choose_browser_action_accepts_a_provider_result_without_decision() -> None:
+    model = FakeModel({
+        "action": "open_url",
+        "parameters": {"url": "https://chatgpt.com"},
+    })
+
+    update = choose_browser_action(create_observed_state(), model)
+
+    assert update == {
+        "status": "action_selected",
+        "next_action": {
+            "action": "open_url",
+            "url": "https://chatgpt.com",
+        },
+    }

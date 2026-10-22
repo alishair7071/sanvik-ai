@@ -23,6 +23,11 @@ from sanvik_agent.capabilities.browser.observation import BrowserObservationStor
 from sanvik_agent.execution.browser import BrowserSession
 
 
+# One browser action can run three graph nodes: observe, decide, and act.
+NODES_PER_BROWSER_ACTION = 3
+RECURSION_LIMIT_BUFFER = 5
+
+
 def choose_after_observation(state: BrowserTaskState) -> str:
     """Choose whether the task may ask the model for another action."""
     if len(state["action_history"]) >= state["max_actions"]:
@@ -96,4 +101,9 @@ def run_browser_task(
     graph = build_browser_task_graph(session, store, model)
     starting_state = create_browser_task_state(goal, max_actions)
 
-    return graph.invoke(starting_state)
+    # LangGraph counts graph-node transitions separately from browser actions.
+    # Give the graph enough transitions to reach Sanvik's action-limit node.
+    recursion_limit = (max_actions * NODES_PER_BROWSER_ACTION) + RECURSION_LIMIT_BUFFER
+    config = {"recursion_limit": recursion_limit}
+
+    return graph.invoke(starting_state, config=config)

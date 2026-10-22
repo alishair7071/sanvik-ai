@@ -58,12 +58,11 @@ class FakeModel:
 def test_browser_graph_observes_acts_and_completes() -> None:
     model = FakeModel([
         BrowserTaskDecision(
-            decision="action",
             action="open_url",
             parameters={"url": "https://example.com/jobs"},
         ),
         BrowserTaskDecision(
-            decision="complete",
+            action="complete",
             final_message="The jobs page is open.",
         ),
     ])
@@ -93,12 +92,10 @@ def test_browser_graph_observes_acts_and_completes() -> None:
 def test_browser_graph_stops_when_the_action_limit_is_reached() -> None:
     model = FakeModel([
         BrowserTaskDecision(
-            decision="action",
             action="open_url",
             parameters={"url": "https://example.com/jobs"},
         ),
         BrowserTaskDecision(
-            decision="action",
             action="scroll_page",
             parameters={"direction": "down"},
         ),
@@ -122,3 +119,28 @@ def test_browser_graph_stops_when_the_action_limit_is_reached() -> None:
     }
     assert len(final_state["action_history"]) == 1
     assert len(model.prompts) == 1
+
+def test_browser_graph_reaches_the_default_twenty_action_limit() -> None:
+    decisions = []
+
+    for _ in range(20):
+        decisions.append(BrowserTaskDecision(
+            action="open_url",
+            parameters={"url": "https://example.com"},
+        ))
+
+    model = FakeModel(decisions)
+    page = FakePage()
+    session = FakeSession(page)
+    store = BrowserObservationStore()
+
+    final_state = run_browser_task(
+        "Keep scrolling",
+        session,
+        store,
+        model,
+    )
+
+    assert final_state["status"] == "failed"
+    assert len(final_state["action_history"]) == 20
+    assert final_state["final_result"]["success"] is False
