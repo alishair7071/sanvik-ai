@@ -25,6 +25,19 @@ def _error(request_id: str | None, code: str, message: str) -> dict:
     }
 
 
+def _request_id_from_line(line: str) -> str | None:
+    """Read a request ID when a last-resort runtime error needs a response."""
+    try:
+        request = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+
+    if isinstance(request, dict) and isinstance(request.get("id"), str):
+        return request["id"]
+
+    return None
+
+
 
 # Handle one request: validate it, run its operation, and build a reply.
 def handle_line(line: str) -> tuple[dict, bool]:
@@ -135,7 +148,18 @@ def handle_line(line: str) -> tuple[dict, bool]:
 # Keep reading requests from Rust until shutdown or the input pipe closes.
 def serve(input_stream: TextIO, output_stream: TextIO) -> None:
     for line in input_stream:
-        response, should_stop = handle_line(line)
+        try:
+            response, should_stop = handle_line(line)
+        except Exception:
+            # A failure in one request must not terminate the local Python process.
+            logger.exception("Unhandled runtime request error")
+            response = _error(
+                _request_id_from_line(line),
+                "internal_error",
+                "Request could not be processed. Please try again.",
+            )
+            should_stop = False
+
         output_stream.write(json.dumps(response, ensure_ascii=False) + "\n")
         output_stream.flush()
         if should_stop:

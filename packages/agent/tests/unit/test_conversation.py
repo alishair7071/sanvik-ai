@@ -213,3 +213,74 @@ def test_empty_chat_values_are_rejected(monkeypatch) -> None:
         conversation.chat("Hello", "   ")
 
     assert model.calls == []
+
+
+def test_model_error_returns_a_safe_conversation_reply(monkeypatch) -> None:
+    class BrokenModel:
+        def bind_tools(self, tools):
+            return self
+
+        def invoke(self, messages):
+            raise RuntimeError("private provider detail")
+
+    monkeypatch.setattr(conversation, "get_chat_model", lambda: BrokenModel())
+
+    answer = conversation.chat("Open Chrome", new_conversation_id())
+
+    assert answer == conversation.PROCESSING_ERROR_MESSAGE
+    assert "private provider detail" not in answer
+
+
+def test_malformed_tool_result_returns_a_safe_conversation_reply(monkeypatch) -> None:
+    model = FakeChatModel([
+        AIMessage(
+            content="",
+            tool_calls=[{
+                "name": "run_known_workflow",
+                "args": {"task": "Open Chrome."},
+                "id": "tool-call-bad-result",
+                "type": "tool_call",
+            }],
+        ),
+    ])
+
+    class MalformedResultTool:
+        name = "run_known_workflow"
+
+        def invoke(self, arguments):
+            return "not a task result"
+
+    monkeypatch.setattr(conversation, "get_chat_model", lambda: model)
+    monkeypatch.setattr(conversation, "run_known_workflow", MalformedResultTool())
+
+    answer = conversation.chat("Open Chrome", new_conversation_id())
+
+    assert answer == conversation.PROCESSING_ERROR_MESSAGE
+
+
+def test_tool_error_returns_a_safe_conversation_reply(monkeypatch) -> None:
+    model = FakeChatModel([
+        AIMessage(
+            content="",
+            tool_calls=[{
+                "name": "run_known_workflow",
+                "args": {"task": "Open Chrome."},
+                "id": "tool-call-error",
+                "type": "tool_call",
+            }],
+        ),
+    ])
+
+    class BrokenTool:
+        name = "run_known_workflow"
+
+        def invoke(self, arguments):
+            raise RuntimeError("private execution detail")
+
+    monkeypatch.setattr(conversation, "get_chat_model", lambda: model)
+    monkeypatch.setattr(conversation, "run_known_workflow", BrokenTool())
+
+    answer = conversation.chat("Open Chrome", new_conversation_id())
+
+    assert answer == "The task could not be completed: Task execution failed. Please try again."
+    assert "private execution detail" not in answer

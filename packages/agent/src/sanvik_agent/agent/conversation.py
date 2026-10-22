@@ -1,6 +1,7 @@
 """Outer LangGraph for general chat and task-tool calls."""
 
 import json
+import logging
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
@@ -8,6 +9,13 @@ from langgraph.graph import END, START, MessagesState, StateGraph
 
 from sanvik_agent.llm.provider import get_chat_model
 from sanvik_agent.tools import run_general_browser_task, run_known_workflow
+
+logger = logging.getLogger(__name__)
+
+PROCESSING_ERROR_MESSAGE = (
+    "I couldn't complete that request because something went wrong while "
+    "processing it. Please try again."
+)
 
 
 SYSTEM_PROMPT = (
@@ -29,11 +37,16 @@ SYSTEM_PROMPT = (
 
 def call_model(state: MessagesState) -> dict:
     """Let the model answer directly or request one supported tool."""
-    model = get_chat_model()
-    tools = [run_known_workflow, run_general_browser_task]
-    model_with_tools = model.bind_tools(tools)
-    messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
-    response = model_with_tools.invoke(messages)
+    try:
+        model = get_chat_model()
+        tools = [run_known_workflow, run_general_browser_task]
+        model_with_tools = model.bind_tools(tools)
+        messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
+        response = model_with_tools.invoke(messages)
+    except Exception:
+        logger.exception("Conversation model request failed")
+        response = AIMessage(content=PROCESSING_ERROR_MESSAGE)
+
     return {"messages": [response]}
 
 
@@ -76,8 +89,12 @@ def run_tool(state: MessagesState) -> dict:
     else:
         try:
             result = selected_tool.invoke(tool_call["args"])
-        except Exception as error:
-            result = {"success": False, "error": str(error)}
+        except Exception:
+            logger.exception("Conversation task tool failed")
+            result = {
+                "success": False,
+                "error": "Task execution failed. Please try again.",
+            }
 
     tool_message = ToolMessage(
         content=json.dumps(result, ensure_ascii=False),
@@ -88,8 +105,15 @@ def run_tool(state: MessagesState) -> dict:
 
 def create_final_answer(state: MessagesState) -> dict:
     """Return a factual reply from the tool result without another model call."""
-    tool_message = state["messages"][-1]
-    result = json.loads(str(tool_message.content))
+    try:
+        tool_message = state["messages"][-1]
+        result = json.loads(str(tool_message.content))
+    except (IndexError, TypeError, json.JSONDecodeError):
+        logger.exception("Conversation tool result could not be read")
+        return {"messages": [AIMessage(content=PROCESSING_ERROR_MESSAGE)]}
+
+    if not isinstance(result, dict):
+        return {"messages": [AIMessage(content=PROCESSING_ERROR_MESSAGE)]}
 
     final_result = result.get("final_result")
 
@@ -153,6 +177,11 @@ def chat(message: str, conversation_id: str) -> str:
 
     starting_state = {"messages": [HumanMessage(content=message)]}
     config = {"configurable": {"thread_id": conversation_id}}
-    final_state = conversation_graph.invoke(starting_state, config=config)
-    assistant_message = final_state["messages"][-1]
-    return str(assistant_message.content)
+    try:
+        final_state = conversation_graph.invoke(starting_state, config=config)
+        assistant_message = final_state["messages"][-1]
+        return str(assistant_message.content)
+    except Exception:
+        # Keep the Python runtime alive when an unexpected LangGraph error occurs.
+        logger.exception("Conversation graph failed")
+        return PROCESSING_ERROR_MESSAGE

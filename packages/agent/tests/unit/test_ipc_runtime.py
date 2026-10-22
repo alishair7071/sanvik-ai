@@ -1,6 +1,7 @@
 import io
 import json
 
+from sanvik_agent.ipc import runtime
 from sanvik_agent.ipc.runtime import handle_line, serve
 from sanvik_agent.tools import general_browser_task_tool
 
@@ -75,3 +76,38 @@ def test_invalid_requests_and_unknown_operation() -> None:
         assert response["error"]["code"] == expected_code
         assert response["id"] == expected_id
         assert not stop
+
+
+def test_unexpected_request_error_does_not_stop_the_runtime(monkeypatch) -> None:
+    calls = []
+
+    def broken_then_working(line: str):
+        calls.append(line)
+
+        if len(calls) == 1:
+            raise RuntimeError("unexpected failure")
+
+        return {
+            "version": 1,
+            "type": "response",
+            "id": "next",
+            "success": True,
+            "payload": {"message": "still running"},
+        }, False
+
+    monkeypatch.setattr(runtime, "handle_line", broken_then_working)
+
+    output = io.StringIO()
+    serve(
+        io.StringIO(
+            '{"version":1,"type":"request","id":"first","payload":{"operation":"ping"}}\n'
+            '{"version":1,"type":"request","id":"next","payload":{"operation":"ping"}}\n'
+        ),
+        output,
+    )
+
+    first, second = [json.loads(line) for line in output.getvalue().splitlines()]
+    assert first["id"] == "first"
+    assert first["error"]["code"] == "internal_error"
+    assert second["success"] is True
+    assert second["payload"]["message"] == "still running"
