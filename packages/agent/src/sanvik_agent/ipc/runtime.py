@@ -111,6 +111,9 @@ def handle_line(line: str) -> tuple[dict, bool]:
             return _error(request_id, "internal_error", "Task failed unexpectedly"), False
 
     elif operation == "shutdown":
+        from sanvik_agent.tools.general_browser_task_tool import close_browser_session
+
+        close_browser_session()
         result = {"message": "Sanvik Python runtime is shutting down"}
         should_stop = True
 

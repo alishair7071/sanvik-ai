@@ -21,7 +21,7 @@ sanvik-ai/
 |   |   |   |-- planner.py            Structured LLM planning
 |   |   |   `-- plan.py               Plan data models
 |   |   |-- tools/
-|   |   |   `-- computer_task_tool.py Tool wrapper around the task graph
+|   |   |   `-- known_workflow_tool.py Tool wrapper around the task graph
 |   |   |-- execution/
 |   |   |   |-- plan_validator.py     Supported-plan checks
 |   |   |   |-- executor.py           Action dispatch

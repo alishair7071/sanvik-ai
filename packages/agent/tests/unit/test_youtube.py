@@ -181,7 +181,7 @@ def test_play_youtube_video_opens_the_first_result_and_verifies_playback() -> No
         ("**/results?search_query=*", "domcontentloaded", 10_000),
         ("**/watch?*", "domcontentloaded", 10_000),
     ]
-    assert page.waited_functions[0][1] == 10_000
+    assert page.waited_functions[0][1] == 25_000
 
 
 def test_play_video_clicks_the_player_when_it_starts_paused() -> None:

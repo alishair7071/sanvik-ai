@@ -9,7 +9,7 @@ def test_create_browser_task_state_creates_clean_initial_state() -> None:
     assert state == {
         "goal": "Find Python jobs in Lahore",
         "status": "created",
-        "max_actions": 10,
+        "max_actions": 20,
         "action_history": [],
     }
 

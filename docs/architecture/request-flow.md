@@ -27,8 +27,8 @@ React chat -> Tauri chat_message -> Rust stdin -> Python IPC
 5. `packages/agent/src/sanvik_agent/ipc/runtime.py` validates the request and
    calls `agent/conversation.py`.
 6. The conversation graph asks the model whether it can answer directly or
-   should call `run_computer_task`.
-7. For a computer request, `tools/computer_task_tool.py` calls the existing
+   should call `run_known_workflow`.
+7. For a computer request, `tools/known_workflow_tool.py` calls the existing
    `agent/workflow.py`. That graph creates a validated plan and passes it to
    the execution layer.
 8. The tool result returns to the conversation graph. The model uses that real

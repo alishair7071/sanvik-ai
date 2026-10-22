@@ -9,6 +9,7 @@ VIDEO_RESULT_SELECTOR = "ytd-video-renderer"
 FIRST_VIDEO_LINK_SELECTOR = "ytd-video-renderer a#thumbnail"
 VIDEO_PLAYER_SELECTOR = "video"
 RESULTS_TIMEOUT = 20_000
+PLAYBACK_TIMEOUT = 25_000
 
 
 # Check that a user-provided search query is safe and useful before using it.
@@ -98,7 +99,7 @@ def verify_video_playing(page) -> dict:
                 const video = document.querySelector("video")
                 return video && !video.paused && video.currentTime > 0
             }""",
-            timeout=10_000,
+            timeout=PLAYBACK_TIMEOUT,
         )
     except Exception as error:
         raise RuntimeError("YouTube video playback could not be verified") from error

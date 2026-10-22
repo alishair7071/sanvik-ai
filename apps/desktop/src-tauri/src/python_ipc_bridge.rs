@@ -16,7 +16,7 @@ use crate::python_process_manager::PythonProcess;
 const PROTOCOL_VERSION: u8 = 1;
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
 const RUN_TIMEOUT: Duration = Duration::from_secs(90);
-const CHAT_TIMEOUT: Duration = Duration::from_secs(180);
+const CHAT_TIMEOUT: Duration = Duration::from_secs(300);
 
 #[derive(Serialize)]
 struct Request<'a> {

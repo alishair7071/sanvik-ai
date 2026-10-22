@@ -2,6 +2,7 @@ import io
 import json
 
 from sanvik_agent.ipc.runtime import handle_line, serve
+from sanvik_agent.tools import general_browser_task_tool
 
 
 def test_ping_and_echo_keep_their_ids() -> None:
@@ -32,7 +33,14 @@ def test_bad_input_does_not_end_session() -> None:
     assert not stop
 
 
-def test_shutdown_acknowledges_and_stops() -> None:
+def test_shutdown_acknowledges_and_stops(monkeypatch) -> None:
+    closed = []
+    monkeypatch.setattr(
+        general_browser_task_tool,
+        "close_browser_session",
+        lambda: closed.append(True),
+    )
+
     output = io.StringIO()
     serve(
         io.StringIO(
@@ -44,6 +52,7 @@ def test_shutdown_acknowledges_and_stops() -> None:
     replies = [json.loads(line) for line in output.getvalue().splitlines()]
     assert len(replies) == 1
     assert replies[0]["id"] == "end"
+    assert closed == [True]
 
 
 def test_boolean_version_is_rejected() -> None:

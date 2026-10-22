@@ -104,3 +104,26 @@ def verify_page_domain(page, expected_domain: str) -> dict:
         "url": page.url,
         "title": page.title(),
     }
+
+
+# Share one Playwright browser across known workflows and general browser tasks.
+_managed_browser_session = None
+
+
+def get_managed_browser_session() -> BrowserSession:
+    """Return the one browser session owned by this Python runtime."""
+    global _managed_browser_session
+
+    if _managed_browser_session is None:
+        _managed_browser_session = BrowserSession()
+
+    return _managed_browser_session
+
+
+def close_managed_browser_session() -> None:
+    """Close the shared browser session when the Python runtime stops."""
+    global _managed_browser_session
+
+    if _managed_browser_session is not None:
+        _managed_browser_session.close()
+        _managed_browser_session = None

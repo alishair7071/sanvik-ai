@@ -1,5 +1,6 @@
 import pytest
 
+from sanvik_agent.execution import browser
 from sanvik_agent.execution.browser import BrowserSession, verify_page_domain
 
 
@@ -132,3 +133,26 @@ def test_close_releases_browser_resources(tmp_path) -> None:
     assert context.closed is True
     assert playwright.stopped is True
     assert session.page is None
+
+def test_managed_browser_session_is_shared_and_can_be_closed(monkeypatch) -> None:
+    class FakeManagedSession:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    session = FakeManagedSession()
+    monkeypatch.setattr(browser, "_managed_browser_session", None)
+    monkeypatch.setattr(browser, "BrowserSession", lambda: session)
+
+    first_session = browser.get_managed_browser_session()
+    second_session = browser.get_managed_browser_session()
+
+    assert first_session is session
+    assert second_session is session
+
+    browser.close_managed_browser_session()
+
+    assert session.closed is True
+    assert browser._managed_browser_session is None

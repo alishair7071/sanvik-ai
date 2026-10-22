@@ -3,7 +3,7 @@
 from typing import NotRequired, TypedDict
 
 
-DEFAULT_MAX_BROWSER_ACTIONS = 10
+DEFAULT_MAX_BROWSER_ACTIONS = 20
 
 
 class BrowserTaskState(TypedDict):

@@ -3,7 +3,7 @@
 import logging
 
 from sanvik_agent.agent.plan import Plan
-from sanvik_agent.execution.browser import BrowserSession
+from sanvik_agent.execution.browser import get_managed_browser_session
 from sanvik_agent.execution.plan_validator import (
     UnsupportedPlan,
     check_plan,
@@ -22,18 +22,11 @@ from sanvik_agent.execution.youtube import play_youtube_video
 
 
 logger = logging.getLogger(__name__)
-_browser_session = None
 
 
-# Reuse one Playwright browser while the local Python runtime is alive.
+# Keep this small wrapper so the known workflow stays easy to test.
 def get_browser_session():
-    global _browser_session
-
-    if _browser_session is None:
-        _browser_session = BrowserSession()
-
-    return _browser_session
-
+    return get_managed_browser_session()
 
 # Run the validated YouTube workflow and return its verified result.
 def execute_youtube_video_plan(query: str) -> dict:

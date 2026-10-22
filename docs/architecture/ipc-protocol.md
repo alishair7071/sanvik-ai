@@ -21,7 +21,7 @@ conversation LangGraph remember earlier messages while the Python process is
 running.
 
 For a computer request, the conversation graph calls the
-`run_computer_task` tool. The tool uses the existing task graph to plan,
+`run_known_workflow` tool. The tool uses the existing task graph to plan,
 validate, execute, and verify supported actions. The task result is returned to
 the conversation graph before it creates the final response.
 

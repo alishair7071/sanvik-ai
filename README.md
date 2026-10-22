@@ -61,7 +61,7 @@ Set `SANVIK_PYTHON` to override the Python executable used by the desktop app.
 | Rust JSON bridge | `apps/desktop/src-tauri/src/python_ipc_bridge.rs` |
 | Python request handling | `packages/agent/src/sanvik_agent/ipc/runtime.py` |
 | Conversation LangGraph | `packages/agent/src/sanvik_agent/agent/conversation.py` |
-| Computer task tool wrapper | `packages/agent/src/sanvik_agent/tools/computer_task_tool.py` |
+| Computer task tool wrapper | `packages/agent/src/sanvik_agent/tools/known_workflow_tool.py` |
 | Plan and execute LangGraph | `packages/agent/src/sanvik_agent/agent/workflow.py` |
 | Structured planner | `packages/agent/src/sanvik_agent/agent/planner.py` |
 | Plan safety checks | `packages/agent/src/sanvik_agent/execution/plan_validator.py` |

@@ -23,7 +23,7 @@ class FakeChatModel:
 
 
 class FakeComputerTool:
-    name = "run_computer_task"
+    name = "run_known_workflow"
 
     def __init__(self) -> None:
         self.tasks = []
@@ -33,6 +33,23 @@ class FakeComputerTool:
         return {
             "plan": {"goal": "Open Google Chrome", "steps": []},
             "execution": {"completed": True, "steps": []},
+        }
+
+
+class FakeBrowserTool:
+    name = "run_general_browser_task"
+
+    def __init__(self) -> None:
+        self.tasks = []
+
+    def invoke(self, arguments):
+        self.tasks.append(arguments["task"])
+        return {
+            "status": "completed",
+            "final_result": {
+                "success": True,
+                "message": "The jobs page is open.",
+            },
         }
 
 
@@ -60,7 +77,7 @@ def test_computer_request_runs_tool_then_returns_final_answer(monkeypatch) -> No
         AIMessage(
             content="",
             tool_calls=[{
-                "name": "run_computer_task",
+                "name": "run_known_workflow",
                 "args": {"task": "Open Google Chrome."},
                 "id": "tool-call-1",
                 "type": "tool_call",
@@ -70,22 +87,47 @@ def test_computer_request_runs_tool_then_returns_final_answer(monkeypatch) -> No
     ])
     computer_tool = FakeComputerTool()
     monkeypatch.setattr(conversation, "get_chat_model", lambda: model)
-    monkeypatch.setattr(conversation, "run_computer_task", computer_tool)
+    monkeypatch.setattr(conversation, "run_known_workflow", computer_tool)
 
     answer = conversation.chat("Could you please get Chrome going for me?", new_conversation_id())
 
-    assert answer == "Chrome opened successfully."
+    assert answer == "Task completed successfully."
     assert computer_tool.tasks == ["Open Google Chrome."]
-    assert len(model.calls) == 2
-    assert model.tools == [computer_tool]
+    assert len(model.calls) == 1
+    assert model.tools == [computer_tool, conversation.run_general_browser_task]
 
     system_prompt = model.calls[0][0].content
     assert "clear, self-contained task" in system_prompt
     assert "refined request" in system_prompt
 
-    tool_result = model.calls[1][-1]
-    assert isinstance(tool_result, ToolMessage)
-    assert json.loads(tool_result.content)["execution"]["completed"] is True
+
+
+def test_browser_request_runs_general_browser_tool_then_returns_final_answer(monkeypatch) -> None:
+    model = FakeChatModel([
+        AIMessage(
+            content="",
+            tool_calls=[{
+                "name": "run_general_browser_task",
+                "args": {"task": "Open the jobs page and search for Python jobs."},
+                "id": "tool-call-browser",
+                "type": "tool_call",
+            }],
+        ),
+        AIMessage(content="The jobs page is open."),
+    ])
+    browser_tool = FakeBrowserTool()
+    monkeypatch.setattr(conversation, "get_chat_model", lambda: model)
+    monkeypatch.setattr(conversation, "run_general_browser_task", browser_tool)
+
+    answer = conversation.chat(
+        "Open a jobs website and search for Python jobs.",
+        new_conversation_id(),
+    )
+
+    assert answer == "The jobs page is open."
+    assert browser_tool.tasks == ["Open the jobs page and search for Python jobs."]
+    assert model.tools == [conversation.run_known_workflow, browser_tool]
+
 
 
 def test_youtube_request_returns_the_video_execution_result(monkeypatch) -> None:
@@ -93,7 +135,7 @@ def test_youtube_request_returns_the_video_execution_result(monkeypatch) -> None
         AIMessage(
             content="",
             tool_calls=[{
-                "name": "run_computer_task",
+                "name": "run_known_workflow",
                 "args": {"task": "Play Big Buck Bunny on YouTube."},
                 "id": "tool-call-youtube",
                 "type": "tool_call",
@@ -109,6 +151,7 @@ def test_youtube_request_returns_the_video_execution_result(monkeypatch) -> None
         },
         "execution": {
             "completed": True,
+            "steps": [{"message": "YouTube video is playing"}],
             "video": {"title": "Big Buck Bunny - YouTube", "playing": True},
         },
     }
@@ -118,14 +161,12 @@ def test_youtube_request_returns_the_video_execution_result(monkeypatch) -> None
         return task_result
 
     monkeypatch.setattr(conversation, "get_chat_model", lambda: model)
-    monkeypatch.setattr("sanvik_agent.tools.computer_task_tool.run_task", fake_run_task)
+    monkeypatch.setattr("sanvik_agent.tools.known_workflow_tool.run_task", fake_run_task)
 
     answer = conversation.chat("Play Big Buck Bunny on YouTube", new_conversation_id())
 
-    assert answer == "Big Buck Bunny is now playing on YouTube."
+    assert answer == "YouTube video is playing"
     assert tasks == ["Play Big Buck Bunny on YouTube."]
-    tool_result = model.calls[1][-1]
-    assert json.loads(tool_result.content) == task_result
 
 
 def test_ambiguous_action_returns_clarifying_question(monkeypatch) -> None:
@@ -134,7 +175,7 @@ def test_ambiguous_action_returns_clarifying_question(monkeypatch) -> None:
     ])
     computer_tool = FakeComputerTool()
     monkeypatch.setattr(conversation, "get_chat_model", lambda: model)
-    monkeypatch.setattr(conversation, "run_computer_task", computer_tool)
+    monkeypatch.setattr(conversation, "run_known_workflow", computer_tool)
 
     answer = conversation.chat("Open it", new_conversation_id())
 
