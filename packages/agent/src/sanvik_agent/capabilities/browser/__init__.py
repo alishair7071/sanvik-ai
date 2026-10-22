@@ -1,0 +1,1 @@
+"""Read and operate browser state through controlled capabilities."""
