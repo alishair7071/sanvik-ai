@@ -7,31 +7,28 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, MessagesState, StateGraph
 
 from sanvik_agent.llm.provider import get_chat_model
-from sanvik_agent.tools import run_browser_task_tool, run_computer_task
-
+from sanvik_agent.tools import run_computer_task
 
 SYSTEM_PROMPT = (
     "You are Sanvik AI, a helpful Windows computer assistant. "
     "Answer general questions directly. "
+    "A supported computer request can include playing a YouTube video. "
     "When the user asks you to operate their computer, first rewrite the request "
-    "as a clear, self-contained task. The refined request must use the correct tool. Resolve references "
+    "as a clear, self-contained task for the computer operator. Resolve references "
     "such as 'it' from the conversation. Preserve the user's exact intent, text, "
     "paths, and URLs. Do not add actions the user did not request. "
     "If important information is missing or ambiguous, ask the user a short "
-    "clarifying question instead of calling a tool. "
-    "Use run_computer_task for supported Windows applications and the tested "
-    "YouTube video workflow. Use run_browser_task_tool for a general task on a "
-    "website that needs browser interaction. Call only one tool per user message. "
-    "After receiving a tool result, report success only when it completed "
-    "successfully."
+    "clarifying question instead of calling the tool. "
+    "When the task is clear, call run_computer_task once and put the refined "
+    "request in its task argument. After receiving the tool result, report success "
+    "only when its execution completed successfully."
 )
 
 
 def call_model(state: MessagesState) -> dict:
-    """Let the model answer directly or request one supported tool."""
+    """Let the model answer directly or request the computer-task tool."""
     model = get_chat_model()
-    tools = [run_computer_task, run_browser_task_tool]
-    model_with_tools = model.bind_tools(tools)
+    model_with_tools = model.bind_tools([run_computer_task])
     messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
     response = model_with_tools.invoke(messages)
     return {"messages": [response]}
@@ -48,7 +45,7 @@ def choose_next_step(state: MessagesState) -> str:
 
 
 def run_tool(state: MessagesState) -> dict:
-    """Run one requested tool and return its result to the model."""
+    """Execute one requested computer task and return its result to the model."""
     tool_calls = state["messages"][-1].tool_calls
 
     if len(tool_calls) != 1:
@@ -64,18 +61,11 @@ def run_tool(state: MessagesState) -> dict:
 
     tool_call = tool_calls[0]
 
-    if tool_call["name"] == run_computer_task.name:
-        selected_tool = run_computer_task
-    elif tool_call["name"] == run_browser_task_tool.name:
-        selected_tool = run_browser_task_tool
-    else:
-        selected_tool = None
-
-    if selected_tool is None:
+    if tool_call["name"] != run_computer_task.name:
         result = {"success": False, "error": "Unknown tool requested"}
     else:
         try:
-            result = selected_tool.invoke(tool_call["args"])
+            result = run_computer_task.invoke(tool_call["args"])
         except Exception as error:
             result = {"success": False, "error": str(error)}
 

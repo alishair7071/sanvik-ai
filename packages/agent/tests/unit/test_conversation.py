@@ -36,23 +36,6 @@ class FakeComputerTool:
         }
 
 
-class FakeBrowserTool:
-    name = "run_browser_task_tool"
-
-    def __init__(self) -> None:
-        self.tasks = []
-
-    def invoke(self, arguments):
-        self.tasks.append(arguments["task"])
-        return {
-            "status": "completed",
-            "final_result": {
-                "success": True,
-                "message": "The jobs page is open.",
-            },
-        }
-
-
 def new_conversation_id() -> str:
     return str(uuid4())
 
@@ -94,7 +77,7 @@ def test_computer_request_runs_tool_then_returns_final_answer(monkeypatch) -> No
     assert answer == "Chrome opened successfully."
     assert computer_tool.tasks == ["Open Google Chrome."]
     assert len(model.calls) == 2
-    assert model.tools == [computer_tool, conversation.run_browser_task_tool]
+    assert model.tools == [computer_tool]
 
     system_prompt = model.calls[0][0].content
     assert "clear, self-contained task" in system_prompt
@@ -103,37 +86,6 @@ def test_computer_request_runs_tool_then_returns_final_answer(monkeypatch) -> No
     tool_result = model.calls[1][-1]
     assert isinstance(tool_result, ToolMessage)
     assert json.loads(tool_result.content)["execution"]["completed"] is True
-
-
-def test_browser_request_runs_general_browser_tool_then_returns_final_answer(monkeypatch) -> None:
-    model = FakeChatModel([
-        AIMessage(
-            content="",
-            tool_calls=[{
-                "name": "run_browser_task_tool",
-                "args": {"task": "Open the jobs page and search for Python jobs."},
-                "id": "tool-call-browser",
-                "type": "tool_call",
-            }],
-        ),
-        AIMessage(content="The jobs page is open."),
-    ])
-    browser_tool = FakeBrowserTool()
-    monkeypatch.setattr(conversation, "get_chat_model", lambda: model)
-    monkeypatch.setattr(conversation, "run_browser_task_tool", browser_tool)
-
-    answer = conversation.chat(
-        "Open a jobs website and search for Python jobs.",
-        new_conversation_id(),
-    )
-
-    assert answer == "The jobs page is open."
-    assert browser_tool.tasks == ["Open the jobs page and search for Python jobs."]
-    assert model.tools == [conversation.run_computer_task, browser_tool]
-
-    tool_result = model.calls[1][-1]
-    assert isinstance(tool_result, ToolMessage)
-    assert json.loads(tool_result.content)["final_result"]["success"] is True
 
 
 def test_youtube_request_returns_the_video_execution_result(monkeypatch) -> None:
